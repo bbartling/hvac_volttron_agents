@@ -13,7 +13,9 @@ Check platform config:
 `vctl config get platform.trimmeragent config`
 
 
-Install the agent. Also for debugging purposes I included the `-f` for a `force` if the agent needs to be reinstalled over and over without having to do a `vctl stop agent` then a `vctl remove agent` the `-f` can force a reinstall without the stop and remove vctl process.
+Also for debugging purposes I included the `-f` for a `force` if the agent needs to be reinstalled over and over without having to do a `vctl stop agent` then a `vctl remove agent` the `-f` can force a reinstall without the stop and remove vctl process.
+
+Install the agent. 
 `python scripts/install-agent.py -s AhuTrimRespondAgent/ -c AhuTrimRespondAgent/config  --tag trimmer -i platform.trimmeragent -f`
 
 
