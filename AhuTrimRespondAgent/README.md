@@ -1,4 +1,4 @@
-This agent will reset a variable volume air handling unit duct pressure setpoint to save fan energy consumption.
+This agent will reset a variable volume air handling unit duct pressure setpoint to save fan energy consumption. In the `init` be sure how create a topic for all VAV BACnet controllers and the AHU BACnet controller, these need to be hard coded into the agent.py file. Also each `rpc` call needs to be hard coded to reflect what BACnet controller to read or write.
 
 
 See HVAC VAV fan system sequence in the PDF folder - G36_2018 (86850).pdf Page 19 Informative Table 5.1.14.4 Example Sequence T&R Variables are the parameters of the config file.
