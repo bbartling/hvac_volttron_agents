@@ -1,0 +1,13 @@
+{
+  # VOLTTRON config files are JSON with support for python style comments.
+  "ahu_static_sp_start": 0.75, # AHU static setpoint startup
+  "ahu_static_sp_min": 0.15, # AHU static setpoint min
+  "ahu_static_sp_max": 1.5, # AHU static setpoint max
+  "static_sp_trim": -0.04, # AHU static setpoint trim amount
+  "static_sp_increase": 0.06, # AHU static setpoint increase amount
+  "time_delay_startup": 300, # startup delay before trim respond
+  "time_delay_normal": 120, # delay between each trim respond after startup
+  "vav_ignore_requests": 1, # high end number of VAV box dprs to ignore
+  "num_of_vav_above_hi_dpr_stp": 2, # number of VAV box dprs above high_vav_dpr_stp required for trim or respond
+  "high_vav_dpr_stp": 90 # VAV box high damper setpoint in percent for trim or respond 
+}
