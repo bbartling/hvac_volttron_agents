@@ -32,16 +32,15 @@ def load_me(config_path, **kwargs):
     try:
         global config
         config = utils.load_config(config_path)
-        _log.info(f'*** [INFO] *** - debug config {config}')
+        _log.debug(f'*** [INFO] *** - debug config {config}')
     except Exception:
         config = {}
 
     if not config:
-        _log.info("Using Agent defaults for starting configuration.")
+        _log.debug("Using Agent defaults for starting configuration.")
 
 
-    return Setteroccvav(setting1, setting2, **kwargs)
-    
+    return Setteroccvav(**kwargs)
     
 
 
@@ -54,16 +53,36 @@ class Setteroccvav(Agent):
         super(Setteroccvav, self).__init__(**kwargs)
         _log.debug("vip_identity: " + self.core.identity)
 
-        self.default_config = {}
+
+        self.default_config = {
+        "revertpoint_default": "1",
+        "unnoccupied_value": "2",
+        "building_topic": "slipstream_internal/slipstream_hq",
+        "jci_setpoint_topic": "OCC-SCHEDULE",
+        "trane_setpoint_topic": "Occupancy Request",
+        "jci_zonetemp_topic": "ZN-T",
+        "trane_zonetemp_topic": "Space Temperature Local"
+        }
+
+        revertpoint_default = float(self.default_config["revertpoint_default"])
+        unnoccupied_value = float(self.default_config["unnoccupied_value"])
+        building_topic = str(self.default_config["building_topic"])
+        jci_setpoint_topic = str(self.default_config["jci_setpoint_topic"])            
+        trane_setpoint_topic = str(self.default_config["trane_setpoint_topic"])
+        jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
+        trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
+
+        self.revertpoint_default = revertpoint_default
+        self.unnoccupied_value = unnoccupied_value
+        self.building_topic  = building_topic
+        self.jci_setpoint_topic = jci_setpoint_topic
+        self.trane_setpoint_topic = trane_setpoint_topic
+        self.jci_zonetemp_topic = jci_zonetemp_topic
+        self.trane_zonetemp_topic = trane_zonetemp_topic
+        _log.debug(f'*** [Setter Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
 
         self.agent_id = "dr_event_setpoint_adj_agent"
-
-        self.building_topic  = "slipstream_internal/slipstream_hq/"
-        self.jci_setpoint_topic = "/OCC-SCHEDULE"
-        self.trane_setpoint_stopic = "/Occupancy Request"
-        self.jci_zonetemp_topic = "/ZN-T"
-        self.trane_zonetemp_topic = "/Space Temperature Local"
 
         self.jci_device_map = {
         'VMA-2-6': '27',
@@ -124,39 +143,37 @@ class Setteroccvav(Agent):
         config = self.default_config.copy()
         config.update(contents)
 
-        _log.debug("*** [INFO] *** - Configuring VAV Box Setpoint Adjuster Agent")
+        _log.debug("*** [Setter Agent INFO] *** - ATTEMPTING CONFIG FILE LOAD!")
 
-        '''
+
+
         try:
-            ahu_static_sp_start = float(config["ahu_static_sp_start"])
-            ahu_static_sp_min = float(config["ahu_static_sp_min"])
-            ahu_static_sp_max = float(config["ahu_static_sp_max"])
-            static_sp_trim = float(config["static_sp_trim"])
-            static_sp_increase = float(config["static_sp_increase"])
-            time_delay_startup = int(config["time_delay_startup"])
-            time_delay_normal = int(config["time_delay_normal"])
-            vav_ignore_requests = int(config["vav_ignore_requests"])
-            num_of_vav_above_hi_dpr_stp = int(config["num_of_vav_above_hi_dpr_stp"])
-            high_vav_dpr_stp = int(config["high_vav_dpr_stp"])
+            revertpoint_default = float(config["revertpoint_default"])
+            unnoccupied_value = float(config["unnoccupied_value"])
+            building_topic = str(config["building_topic"])
+            jci_setpoint_topic = str(config["jci_setpoint_topic"])            
+            trane_setpoint_topic = str(config["trane_setpoint_topic"])
+            jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
+            trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
 
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
 
 
-        self.ahu_static_sp_start = ahu_static_sp_start
-        self.ahu_static_sp_min = ahu_static_sp_min
-        self.ahu_static_sp_max = ahu_static_sp_max
-        self.static_sp_trim = static_sp_trim
-        self.static_sp_increase = static_sp_increase
-        self.time_delay_startup = time_delay_startup
-        self.time_delay_normal = time_delay_normal
-        self.vav_ignore_requests = vav_ignore_requests
-        self.num_of_vav_above_hi_dpr_stp = num_of_vav_above_hi_dpr_stp
-        self.high_vav_dpr_stp = high_vav_dpr_stp
+        _log.debug(f'*** [Setter Agent INFO] *** -  CONFIG FILE LOAD SUCCESS!')
 
-        _log.info(f'*** [INFO] *** - debug self.time_delay_startup {self.time_delay_startup}')
-        '''
+
+        self.revertpoint_default = revertpoint_default
+        self.unnoccupied_value = unnoccupied_value
+        self.building_topic  = building_topic
+        self.jci_setpoint_topic = jci_setpoint_topic
+        self.trane_setpoint_topic = trane_setpoint_topic
+        self.jci_zonetemp_topic = jci_zonetemp_topic
+        self.trane_zonetemp_topic = trane_zonetemp_topic
+
+        _log.debug(f'*** [Setter Agent INFO] *** -  CONFIGS SET SUCCESS!')
+
 
     def _create_subscriptions(self, ahu_topic):
         """
@@ -184,7 +201,7 @@ class Setteroccvav(Agent):
         registers on the device
         """
         # Just write something to the logs so that we can see our success
-        _log.info("*** [Handle Pub Sub INFO] *** - Device {} Publish: {}".format(self.ahu_topic, message))
+        _log.debug("*** [Handle Pub Sub INFO] *** - Device {} Publish: {}".format(self.ahu_topic, message))
 
 
     @Core.receiver("onstart")
@@ -197,17 +214,14 @@ class Setteroccvav(Agent):
         Usually not needed if using the configuration store.
         """
 
-        self.core.schedule(cron('50 13 * * *'), self.raise_setpoints_up)
-        _log.info(f'*** [INFO] *** -  raise_setpoints_up CRON schedule from onstart sucess!')
-
-
-        # Every time_delay_normal seconds, ask the core agent loop to run the actuate point method with no parameters
-        self.core.periodic(60, self.check_zone_temps)
-        _log.info(f'*** [INFO] *** -  onstart sucess!')
+        #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
+        self.core.periodic(7200, self.raise_setpoints_up)
+        _log.debug(f'*** [Setter Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
     def raise_setpoints_up(self):
 
+        _log.debug(f'*** [Setter Agent INFO] *** -  STARTING raise_setpoints_up FUNCTION!')
         schedule_request = []
 
         # create start and end timestamps
@@ -217,74 +231,49 @@ class Setteroccvav(Agent):
         str_end = format_timestamp(_end)
 
         # wrap the topic and timestamps up in a list and add it to the schedules list
-        for device in device_map.values():
-            topic = '/'.join([building_topic, device])
+        for device in self.jci_device_map.values():
+            topic = '/'.join([self.building_topic, device])
             schedule_request.append([topic, str_start, str_end])
 
         # send the request to the actuator
-        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'LOW', schedule_request).get(timeout=4)
-
+        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
+        _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT SCHEDULED SUCESS!')
 
         # start by creating our topic_values
-        topic_values = []
+        set_multi_topic_values = []
+        revert_topic_devices = []
 
-        for device in device_map.values():
-            topic = '/'.join([building_topic, device])
 
-            # swap get_value_for_device with your logic
-            value = self.jci_setpoint_topic(device)
+        for device in self.jci_device_map.values():
+            topic = '/'.join([self.building_topic, device])
+            revert_topic_devices.append(topic)
+            final_topic = '/'.join([topic, self.jci_setpoint_topic])
+
+            # BACnet enum point for VAV occ
+            # 1 == occ, 2 == unnoc
+            unnoccupied = 2
             
             # create a (topic, value) tuple and add it to our topic values
-            topic_values.append((topic, value,))
+            set_multi_topic_values.append((final_topic, unnoccupied)) # 2 == UNNOCUPIED
+
 
         # now we can send our set_multiple_points request, use the basic form with our additional params
-        result = self.vip.rcp.call('platform.actuator', 'set_multiple_points', self.core.identity, topic_values).get(timeout=3)
+        _log.debug(f'*** [Setter Agent INFO] *** -  TOPIC VALUES {set_multi_topic_values}')
 
-        # handle the response here
+        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values).get(timeout=3)
+        _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points BACNET WRITE SUCCESS!')
 
-
-
-    def check_zone_temps(self):
-        """
-        Request that the Actuator check zone temps
-        """
-
-        # Create a start and end timestep to serve as the times we reserve to communicate with the CSV Device
-        _now = get_aware_utc_now()
-        str_now = format_timestamp(_now)
-        _end = _now + td(seconds=10)
-        str_end = format_timestamp(_end)
-
-        # Wrap the timestamps and device topic (used by the Actuator to identify the device) into an actuator request
-        schedule_request = [[self.ahu_topic, str_now, str_end]]
-        
-        # Use a remote procedure call to ask the actuator to schedule us some time on the device
-        result = self.vip.rpc.call(
-            'platform.actuator', 'request_new_schedule', self.agent_id, 'my_test', 'HIGH', schedule_request).get(
-            timeout=4)
-        _log.info(f'*** [INFO] *** - SCHEDULED TIME ON ACTUATOR From "actuate_point" method sucess')
-
- 
-        reads = publish_agent.vip.rpc.call(
-                       'platform.actuator',
-                       'get_multiple_points',
-                       self.agent_id,
-                       [(('self.topic'+'6', self.jci_zonetemp_string)),
-                       (('self.topic'+'7', self.jci_zonetemp_string)),
-                       (('self.topic'+'8', self.jci_zonetemp_string)),
-                       (('self.topic'+'9', self.jci_zonetemp_string)),
-                       (('self.topic'+'9', self.jci_zonetemp_string))]).get(timeout=10)
-
-    @Core.receiver("onstop")
-    def onstop(self, sender, **kwargs):
-        """
-        This method is called when the Agent is about to shutdown, but before it disconnects from
-        the message bus.
-        """
-
-        pass
+        _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
+        gevent.sleep(300)
+        _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
 
 
+        for device in revert_topic_devices:
+            response = self.vip.rpc.call('platform.actuator', 'revert_point', self.core.identity, topic, self.jci_setpoint_topic).get(timeout=3)
+            #_log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS ON {device} SUCCESS!')
+
+
+        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS DONE DEAL SUCCESS!')
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
