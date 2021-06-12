@@ -89,9 +89,6 @@ class Setteroccvav(Agent):
         'VMA-2-6': '27',
         'VMA-2-4': '29',
         'VMA-2-7': '30',
-        }
-
-        '''
         'VMA-1-8': '6',
         'VMA-1-7': '7',
         'VMA-1-6': '8',
@@ -119,13 +116,13 @@ class Setteroccvav(Agent):
         'VMA-1-15': '38',
         'VMA-1-16': '39',
         }
-        '''
+
 
         self.trane_device_map = {
         'VAV-2-5': '12028',
         'VAV-2-1': '12032',
         'VAV-2-2': '12033',
-        'VAV-2-9': '12035',
+        #'VAV-2-9': '12035',
         }
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
@@ -234,8 +231,8 @@ class Setteroccvav(Agent):
         # start by creating our topic_values
         schedule_request = []
         set_multi_topic_values_master = []
-        revert_topic_devices_jci = []
-        revert_topic_devices_trane = []
+        revert_multi_topic_values_master = []
+
 
         # wrap the topic and timestamps up in a list and add it to the schedules list
         for device in self.jci_device_map.values():
@@ -256,14 +253,15 @@ class Setteroccvav(Agent):
 
         for device in self.jci_device_map.values():
             topic_jci = '/'.join([self.building_topic, device])
-            revert_topic_devices_jci.append(topic_jci)
+            #revert_topic_devices_jci.append(topic_jci)
             final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
 
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # 2 == UNNOCUPIED
+            set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
 
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
@@ -271,14 +269,15 @@ class Setteroccvav(Agent):
 
         for device in self.trane_device_map.values():
             topic_trane = '/'.join([self.building_topic, device])
-            revert_topic_devices_trane.append(topic_trane)
+            #revert_topic_devices_trane.append(topic_trane)
             final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
 
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # 2 == UNNOCUPIED
+            set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
 
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
@@ -287,21 +286,19 @@ class Setteroccvav(Agent):
         _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points ON ALL VAVs WRITE SUCCESS!')
 
         _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
-        gevent.sleep(120)
+
+
+        '''
+        FUTURE DR EVENT TIMER
+        '''
+
+        gevent.sleep(600)
         _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
 
+        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
 
-        for device in revert_topic_devices_jci:
-            response = self.vip.rpc.call('platform.actuator', 'revert_point', self.core.identity, topic_jci, self.jci_setpoint_topic).get(timeout=20)
-            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS ON {device} SUCCESS!')
 
-        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS JCI DONE DEAL SUCCESS!')
-
-        for device in revert_topic_devices_trane:
-            response = self.vip.rpc.call('platform.actuator', 'revert_point', self.core.identity, topic_trane, self.trane_setpoint_topic).get(timeout=20)
-            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS ON {device} SUCCESS!')
-
-        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT POINTS TRANE DONE DEAL SUCCESS!')
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
