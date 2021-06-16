@@ -1,10 +1,20 @@
 Created Date: June 16th 2021
 
-This is for testing open ADR signal type `LOAD_CONTROL` On/Off Control
+This is for testing open ADR signal type `LOAD_CONTROL` for On/Off Control for inside the building HVAC.
 
 ```
 signal_name='LOAD_CONTROL',
 signal_type='x-loadControlCapacity',
+```
+Snip from open ADR 2.0 Profile B Specs:
+
+```
+OpenADR 2.0b Profile Specification  - page 32 - Table 1 Signals
+
+This is an instruction for the load controller to operate at a level that is 
+some percentage of its maximum load consumption capacity. This can be mapped to specific load 
+controllers to do things like duty cycling. Note that 1.0 refers to 100% consumption. In the case of 
+simple ON/OFF type devices then 0 = OFF and 1 = ON. 
 ```
 
 openleadr client VEN app
@@ -36,10 +46,10 @@ to calculate kW where this value is sent to the VTN as a report value.
 
 
 tested on Python 3.9
--pip install BAC0
--pip install aiohttp
--pip install aiofiles
--pip install openleadr
+`pip install BAC0`
+`pip install aiohttp`
+`pip install aiofiles`
+`pip install openleadr`
 
 Prior to starting building side VEN & BAC0, make sure your VTN app
 is running. Then open two terminals in this directory, terminal one:
@@ -49,17 +59,5 @@ terminal two:
 `python myven.py`
 
 
-'''
-OpenADR 2.0b Profile Specification  - page 32 - Table 1 Signals
 
-This is an instruction for 
-the load controller to operate at a level that is 
-some percentage of its 
-maximum load consumption capacity. This can be 
-mapped to specific load 
-controllers to do things 
-like duty cycling. Note that 
-1.0 refers to 100% consumption. In the case of 
-simple ON/OFF type devices then 0 = OFF and 1 = ON. 
-'''
 
