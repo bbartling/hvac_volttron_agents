@@ -11,18 +11,16 @@ Snip from open ADR 2.0 Profile B Specs:
 ```
 OpenADR 2.0b Profile Specification  - page 32 - Table 1 Signals
 
-This is an instruction for the load controller to operate at a level that is 
-some percentage of its maximum load consumption capacity. This can be mapped to specific load 
+This is an instruction for the load controller to operate at a level that is 
+some percentage of its maximum load consumption capacity. This can be mapped to specific load 
 controllers to do things like duty cycling. Note that 1.0 refers to 100% consumption. In the case of 
 simple ON/OFF type devices then 0 = OFF and 1 = ON. 
 ```
 
-openleadr client VEN app
-https://openleadr.org/
+The openleadr client VEN app (https://openleadr.org/)
 
 
-that runs along side a BAC0 BACnet app
-https://bac0.readthedocs.io/en/latest/
+runs along side a BAC0 BACnet app (https://bac0.readthedocs.io/en/latest/)
 
 
 The openleadr VEN app communicates to an openleadr VTN app on cloud
