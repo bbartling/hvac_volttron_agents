@@ -89,6 +89,8 @@ class Setteroccvav(Agent):
         'VMA-2-6': '27',
         'VMA-2-4': '29',
         'VMA-2-7': '30',
+        }
+        '''
         'VMA-1-8': '6',
         'VMA-1-7': '7',
         'VMA-1-6': '8',
@@ -116,7 +118,7 @@ class Setteroccvav(Agent):
         'VMA-1-15': '38',
         'VMA-1-16': '39',
         }
-
+        '''
 
         self.trane_device_map = {
         'VAV-2-5': '12028',
@@ -213,7 +215,7 @@ class Setteroccvav(Agent):
         """
 
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
-        self.core.periodic(7200, self.raise_setpoints_up)
+        self.core.periodic(60, self.raise_setpoints_up)
         _log.debug(f'*** [Setter Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
@@ -282,21 +284,32 @@ class Setteroccvav(Agent):
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
-        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_master).get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points ON ALL VAVs WRITE SUCCESS!')
+        result = self.vip.rpc.call('platform.actuator', 'scrape_all', 'slipstream_internal/slipstream_hq/33333').get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  scrape_all ON BAC0 {result}!')
 
-        _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
+        sig_payload_read = result['signal_payload']
+        _log.debug(f'*** [Setter Agent INFO] *** -  signal_payload from BAC0 {sig_payload_read}!')
 
+        sig_duration_read = result['int_signal_duration']
+        _log.debug(f'*** [Setter Agent INFO] *** -  int_signal_duration from BAC0 {sig_duration_read}!')
 
-        '''
-        FUTURE DR EVENT TIMER
-        '''
+        if sig_payload_read == 1:
+            _log.debug(f'*** [Setter Agent INFO] *** -  DR EVENT GO!!!!')
 
-        gevent.sleep(600)
-        _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_master).get(timeout=20)
+            _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points ON ALL VAVs WRITE SUCCESS!')
 
-        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
+            _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
+
+            # demand response event duration comes from BAC0
+            gevent.sleep(sig_duration_read)
+            _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
+
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
+
+        else:
+            _log.debug(f'*** [Setter Agent INFO] *** -  NO DR EVENT')
 
 
 
