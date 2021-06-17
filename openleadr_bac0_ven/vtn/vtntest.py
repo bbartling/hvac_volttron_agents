@@ -3,6 +3,8 @@ from datetime import datetime, timezone, timedelta
 from openleadr import OpenADRServer, enable_default_logging
 from functools import partial
 
+from aiohttp import web
+
 import logging
 enable_default_logging(logging.DEBUG)
 #enable_default_logging()
@@ -41,6 +43,35 @@ async def event_response_callback(ven_id, event_id, opt_type):
     """
     print(f"VEN {ven_id} responded to Event {event_id} with: {opt_type}")
 
+
+async def handle_trigger_event(request):
+    """
+    Handle a trigger event request.
+    """
+    server = request.app["server"]
+    server.add_event(ven_id='ven_id_slipstream_ven1',
+        signal_name='LOAD_CONTROL',
+        signal_type='x-loadControlCapacity',
+        intervals=[{'dtstart': datetime.now(timezone.utc),
+                    'duration': timedelta(minutes=10),
+                    'signal_payload': 1.0}],
+        callback=event_response_callback,
+        event_id="our-event-id",
+    )
+    now = "the current time"
+    return web.Response(text=f"Event added at {now}")
+
+
+async def handle_cancel_event(request):
+    """
+    Handle a cancel event request.
+    """
+    server = request.app["server"]
+    server.cancel_event(ven_id="ven_id_slipstream_ven1", event_id="our-event-id")
+    now = "the current time"
+    return web.Response(text=f"Event canceled at {now}")
+
+
 # Create the server object
 server = OpenADRServer(vtn_id='cloudvtn',http_host='0.0.0.0')
 
@@ -50,16 +81,19 @@ server.add_handler('on_create_party_registration', on_create_party_registration)
 # Add the handler for report registrations from the VEN
 server.add_handler('on_register_report', on_register_report)
 
-
+server.app.add_routes([
+    web.get('/trigger-event', handle_trigger_event),
+    web.get('/cancel-event', handle_cancel_event),
+])
 
 # Add a prepared event for a VEN that will be picked up when it polls for new messages.
-server.add_event(ven_id='ven_id_slipstream_ven1',
-                 signal_name='LOAD_CONTROL',
-                 signal_type='x-loadControlCapacity',
-                 intervals=[{'dtstart': datetime.now(timezone.utc) + timedelta(minutes=5),
-                             'duration': timedelta(minutes=10),
-                             'signal_payload': 1.0}],
-                 callback=event_response_callback)
+# server.add_event(ven_id='ven_id_slipstream_ven1',
+#                  signal_name='LOAD_CONTROL',
+#                  signal_type='x-loadControlCapacity',
+#                  intervals=[{'dtstart': datetime.now(timezone.utc) + timedelta(minutes=5),
+#                              'duration': timedelta(minutes=10),
+#                              'signal_payload': 1.0}],
+#                  callback=event_response_callback)
 
 # Run the server on the asyncio event loop
 loop = asyncio.get_event_loop()

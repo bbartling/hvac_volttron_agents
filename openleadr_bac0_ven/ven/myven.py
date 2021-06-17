@@ -15,12 +15,52 @@ enable_default_logging(logging.INFO)
 
 
 
-STATUS = 0
 
+STATUS = 0
 
 def get_status():
     return STATUS
 
+
+async def change_status(status, delay, duration):
+    """
+    Change the switch position after 'delay' seconds.
+    """
+    global STATUS
+    sig_on = {"signal_payload": 1}
+    sig_off = {"signal_payload": 0}  
+    
+    if delay > 0:
+        await asyncio.sleep(delay)
+        
+    if status == 1 and STATUS == 0:
+        logging.debug("DR EVENT ON")
+        print("DR EVENT ON")
+
+        async with aiofiles.open('event_signal_payload.json', 'w') as outfile:
+            await outfile.write(json.dumps(sig))
+        logging.debug("DR EVENT DURATION SLEEP START")
+        print("DR EVENT DURATION SLEEP START")
+            
+        await asyncio.sleep(duration)
+        
+        logging.debug("DR EVENT DURATION SLEEP EXPIRED")
+        print("DR EVENT DURATION SLEEP EXPIRED")
+        status = 0
+        
+        async with aiofiles.open('event_signal_payload.json', 'w') as outfile:
+            await outfile.write(json.dumps(sig_off))
+            
+    elif status == 0 and STATUS == 1:
+        logging.debug("DR EVENT OFF")
+        print("DR EVENT OFF")
+
+        async with aiofiles.open('event_signal_payload.json', 'w') as outfile:
+            await outfile.write(json.dumps(sig_off))
+
+    STATUS = status
+    logging.debug("STATUS is {STATUS}")
+    print("STATUS is {STATUS}")
 
 
 async def collect_report_value():
@@ -34,33 +74,6 @@ async def collect_report_value():
     print(f'JSON data for power is {power} kW')
 
     return power
-
-
-
-async def change_status(status, delay):
-    """
-    Change the switch position after 'delay' seconds.
-    """
-    global STATUS
-    if delay > 0:
-        await asyncio.sleep(delay)
-    if status == 1 and STATUS == 0:
-        logging.debug("DR EVENT ON")
-        print("DR EVENT ON")
-
-        sig = {"signal_payload": 1}
-        async with aiofiles.open('event_signal_payload.json', 'w') as outfile:
-            await outfile.write(json.dumps(sig))
-
-    elif status == 0 and STATUS == 1:
-        logging.debug("DR EVENT OFF")
-        print("DR EVENT OFF")
-
-        sig = {"signal_payload": 0}
-        async with aiofiles.open('event_signal_payload.json', 'w') as outfile:
-            await outfile.write(json.dumps(sig))
-
-    STATUS = status
 
 
 async def handle_event(event):
@@ -87,11 +100,13 @@ async def handle_event(event):
         start = interval['dtstart']
         delay = (start - now_utc).total_seconds()
         value = interval['signal_payload']
-        delay_info = f"Setting DR Signal of {value} after {round(delay/60/60)} hours {round(delay/60)} minutes timer expires"
+        duration = interval['duration']
+        delay_info = f"Setting DR Signal of {value} after {round(delay/60/60)} hours {round(delay/60)} minutes timer expires for {duration} seconds"
         logging.info(delay_info)
         print(delay_info)
         loop.create_task(change_status(status=int(value),
-                                       delay=delay))
+                                       delay=delay),
+                                       duration=duration)
 
  
     payload_objects = {}
@@ -125,7 +140,7 @@ async def handle_event(event):
 
 # Create the client object
 client = OpenADRClient(ven_name='slipstream_ven1',
-                       vtn_url='http://194.195.214.85:8080/OpenADR2/Simple/2.0b')
+                       vtn_url='http://192.168.0.5:8080/OpenADR2/Simple/2.0b')
 
 
 # Add the report capability to the client
