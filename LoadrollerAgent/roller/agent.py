@@ -1,6 +1,7 @@
 
 """
-Agent documentation goes here. 
+This agent will roll electric power loads by unnoccupy the VAV box
+in a variable volume AHU operating in a cooling mode
 """
 
 __docformat__ = 'reStructuredText'
@@ -53,7 +54,7 @@ class Roller(Agent):
     """
 
     def __init__(self, **kwargs):
-        super(Setteroccvav, self).__init__(**kwargs)
+        super(Roller, self).__init__(**kwargs)
         _log.debug("vip_identity: " + self.core.identity)
 
 
@@ -64,7 +65,11 @@ class Roller(Agent):
         "jci_setpoint_topic": "OCC-SCHEDULE",
         "trane_setpoint_topic": "Occupancy Request",
         "jci_zonetemp_topic": "ZN-T",
-        "trane_zonetemp_topic": "Space Temperature Local"
+        "trane_zonetemp_topic": "Space Temperature Local",
+        "jci_zonetemp_setpoint_topic": "ZN-SP",
+        "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
+        "jci_clg_max_flow": "CLG-MAXFLOW",
+        "trane_clg_max_flow": "Air Flow Setpoint Maximum",
         }
 
         revertpoint_default = float(self.default_config["revertpoint_default"])
@@ -74,6 +79,11 @@ class Roller(Agent):
         trane_setpoint_topic = str(self.default_config["trane_setpoint_topic"])
         jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
         trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
+        jci_zonetemp_setpoint_topic = str(self.default_config["jci_zonetemp_setpoint_topic"])
+        trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
+        jci_clg_max_flow = str(self.default_config["jci_clg_max_flow"])
+        trane_clg_max_flow = str(self.default_config["trane_clg_max_flow"])
+
 
         self.revertpoint_default = revertpoint_default
         self.unnoccupied_value = unnoccupied_value
@@ -82,6 +92,10 @@ class Roller(Agent):
         self.trane_setpoint_topic = trane_setpoint_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
+        self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
+        self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
+        self.jci_clg_max_flow = jci_clg_max_flow
+        self.trane_clg_max_flow = trane_clg_max_flow
         _log.debug(f'*** [Setter Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
 
@@ -157,6 +171,10 @@ class Roller(Agent):
             trane_setpoint_topic = str(config["trane_setpoint_topic"])
             jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
             trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
+            jci_zonetemp_setpoint_topic = str(config["jci_zonetemp_setpoint_topic"])
+            trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
+            jci_clg_max_flow = str(config["jci_clg_max_flow"])
+            trane_clg_max_flow = str(config["trane_clg_max_flow"])
 
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
@@ -173,6 +191,10 @@ class Roller(Agent):
         self.trane_setpoint_topic = trane_setpoint_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
+        self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
+        self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
+        self.jci_clg_max_flow = jci_clg_max_flow
+        self.trane_clg_max_flow = trane_clg_max_flow
 
         _log.debug(f'*** [Setter Agent INFO] *** -  CONFIGS SET SUCCESS!')
 
@@ -259,6 +281,9 @@ class Roller(Agent):
         for device in self.jci_device_map.values():
             topic_jci = '/'.join([self.building_topic, device])
             final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
+            final_topic_jci_znt = '/'.join([topic_jci, self.jci_zonetemp_topic])
+            final_topic_jci_znt_sp = '/'.join([topic_jci, self.jci_zonetemp_setpoint_topic])
+            final_topic_jci_clg_max = '/'.join([topic_jci, self.jci_clg_max_flow])
 
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
@@ -266,8 +291,11 @@ class Roller(Agent):
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
-            get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
-            
+            get_multi_topic_values_master.append((final_topic_jci_znt)) # GET MULTIPLE Zone Temp
+            get_multi_topic_values_master.append((final_topic_jci_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
+            get_multi_topic_values_master.append((final_topic_jci_clg_max)) # GET MULTIPLE Coolig Max Flow Setpoint
+
+
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
 
@@ -275,24 +303,34 @@ class Roller(Agent):
         for device in self.trane_device_map.values():
             topic_trane = '/'.join([self.building_topic, device])
             final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
+            final_topic_trane_znt = '/'.join([topic_trane, self.trane_zonetemp_topic])
+            final_topic_trane_znt_sp = '/'.join([topic_trane, self.trane_zonetemp_setpoint_topic])
+            final_topic_trane_clg_max = '/'.join([topic_trane, self.trane_clg_max_flow])
 
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
+            # Need to convert trane temps to F (x * 1.8) + 32
             
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
-            get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
-            
+            get_multi_topic_values_master.append((final_topic_trane_znt)) # GET MULTIPLE Zone Temp
+            get_multi_topic_values_master.append((final_topic_trane_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
+            get_multi_topic_values_master.append((final_topic_trane_clg_max)) # GET MULTIPLE Coolig Max Flow Setpoint
+
+
+
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
+        result_all = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result_all}')
 
+        #result_all_df = pd.DataFrame(result_all)
+        result_all_df = pd.DataFrame.from_dict(result_all, orient='columns')
+        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points PANDAS DF {result_all_df.head(1)}')
 
-        result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
-
-
+        #result_all_df.to_csv('get_multiple_points.csv')
         
         '''
         result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
@@ -331,5 +369,3 @@ if __name__ == '__main__':
         sys.exit(main())
     except KeyboardInterrupt:
         pass
-
-
