@@ -13,6 +13,7 @@ from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 from volttron.platform.scheduling import cron
 import random
+import pandas as pd
 
 
 _log = logging.getLogger(__name__)
@@ -41,11 +42,12 @@ def load_me(config_path, **kwargs):
         _log.debug("Using Agent defaults for starting configuration.")
 
 
-    return Setteroccvav(**kwargs)
-    
+    return Roller(**kwargs)
 
 
-class Setteroccvav(Agent):
+
+
+class Roller(Agent):
     """
     Document agent constructor here.
     """
@@ -234,6 +236,7 @@ class Setteroccvav(Agent):
         schedule_request = []
         set_multi_topic_values_master = []
         revert_multi_topic_values_master = []
+        get_multi_topic_values_master = []
 
 
         # wrap the topic and timestamps up in a list and add it to the schedules list
@@ -255,7 +258,6 @@ class Setteroccvav(Agent):
 
         for device in self.jci_device_map.values():
             topic_jci = '/'.join([self.building_topic, device])
-            #revert_topic_devices_jci.append(topic_jci)
             final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
 
             # BACnet enum point for VAV occ
@@ -264,14 +266,14 @@ class Setteroccvav(Agent):
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
-
+            get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
+            
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
 
 
         for device in self.trane_device_map.values():
             topic_trane = '/'.join([self.building_topic, device])
-            #revert_topic_devices_trane.append(topic_trane)
             final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
 
             # BACnet enum point for VAV occ
@@ -280,36 +282,23 @@ class Setteroccvav(Agent):
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
-
+            get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
+            
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
-        result = self.vip.rpc.call('platform.actuator', 'scrape_all', 'slipstream_internal/slipstream_hq/33333').get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  scrape_all ON BAC0 {result}!')
 
-        sig_payload_read = result['signal_payload']
-        _log.debug(f'*** [Setter Agent INFO] *** -  signal_payload from BAC0 {sig_payload_read}!')
 
-        sig_duration_read = result['int_signal_duration']
-        _log.debug(f'*** [Setter Agent INFO] *** -  int_signal_duration from BAC0 {sig_duration_read}!')
+        result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
 
-        if sig_payload_read == 1:
-            _log.debug(f'*** [Setter Agent INFO] *** -  DR EVENT GO!!!!')
 
-            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_master).get(timeout=20)
-            _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points ON ALL VAVs WRITE SUCCESS!')
+        
+        '''
+        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
 
-            _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
-
-            # demand response event duration comes from BAC0
-            gevent.sleep(sig_duration_read)
-            _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
-
-            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
-            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
-
-        else:
-            _log.debug(f'*** [Setter Agent INFO] *** -  NO DR EVENT')
+        '''
 
 
 
@@ -342,4 +331,5 @@ if __name__ == '__main__':
         sys.exit(main())
     except KeyboardInterrupt:
         pass
+
 
