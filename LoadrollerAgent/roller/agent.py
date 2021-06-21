@@ -1,7 +1,6 @@
 
 """
-This agent will roll electric power loads by unnoccupy the VAV box
-in a variable volume AHU operating in a cooling mode
+Agent documentation goes here. 
 """
 
 __docformat__ = 'reStructuredText'
@@ -105,8 +104,6 @@ class Roller(Agent):
         'VMA-2-6': '27',
         'VMA-2-4': '29',
         'VMA-2-7': '30',
-        }
-        '''
         'VMA-1-8': '6',
         'VMA-1-7': '7',
         'VMA-1-6': '8',
@@ -134,7 +131,7 @@ class Roller(Agent):
         'VMA-1-15': '38',
         'VMA-1-16': '39',
         }
-        '''
+
 
         self.trane_device_map = {
         'VAV-2-5': '12028',
@@ -239,7 +236,7 @@ class Roller(Agent):
         """
 
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
-        self.core.periodic(60, self.raise_setpoints_up)
+        self.core.periodic(600, self.raise_setpoints_up)
         _log.debug(f'*** [Setter Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
@@ -274,11 +271,12 @@ class Roller(Agent):
 
 
         # send the request to the actuator
-        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
+        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
         _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
 
 
         for device in self.jci_device_map.values():
+            #_log.debug(f'*** [Setter Agent INFO] *** -  COLLECTING DATA ON DEVICE {device}')
             topic_jci = '/'.join([self.building_topic, device])
             final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
             final_topic_jci_znt = '/'.join([topic_jci, self.jci_zonetemp_topic])
@@ -323,17 +321,17 @@ class Roller(Agent):
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
-        result_all = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_multi_topic_values_master).get(timeout=20)
+        result_all = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_multi_topic_values_master).get(timeout=90)
         _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result_all}')
 
         #result_all_df = pd.DataFrame(result_all)
-        result_all_df = pd.DataFrame.from_dict(result_all, orient='columns')
-        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points PANDAS DF {result_all_df.head(1)}')
+        #result_all_df = pd.DataFrame.from_dict(result_all, orient='columns')
+        #_log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points PANDAS DF {result_all_df.head(1)}')
 
         #result_all_df.to_csv('get_multiple_points.csv')
         
         '''
-        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=90)
         _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
 
         '''
@@ -369,3 +367,5 @@ if __name__ == '__main__':
         sys.exit(main())
     except KeyboardInterrupt:
         pass
+
+
