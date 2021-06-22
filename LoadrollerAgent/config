@@ -3,9 +3,15 @@
   "revertpoint_default": "1",
   "unnoccupied_value": "2",
   "building_topic": "slipstream_internal/slipstream_hq",
-  "jci_setpoint_topic": "OCC-SCHEDULE",
-  "trane_setpoint_topic": "Occupancy Request",
+  "jci_occ_topic": "OCC-SCHEDULE",
+  "trane_occ_topic": "Occupancy Request",
   "jci_zonetemp_topic": "ZN-T",
-  "trane_zonetemp_topic": "Space Temperature Local"
+  "trane_zonetemp_topic": "Space Temperature Local",
+  "jci_zonetemp_setpoint_topic": "ZN-SP",
+  "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
+  "jci_clg_max_flow": "CLG-MAXFLOW",
+  "trane_clg_max_flow": "Air Flow Setpoint Maximum",
+  "large_vav_threshold_cfm": 1000,
+  "load_control_capacity_percent": 50
 
 }

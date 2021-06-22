@@ -5,7 +5,7 @@ Agent documentation goes here.
 
 __docformat__ = 'reStructuredText'
 
-import logging, gevent, heapq
+import logging, gevent, heapq, grequests
 import sys
 from datetime import timedelta as td, datetime as dt
 from volttron.platform.agent.utils import format_timestamp, get_aware_utc_now
@@ -84,7 +84,7 @@ class Setteroccvav(Agent):
 
 
         self.agent_id = "dr_event_setpoint_adj_agent"
-
+        self.url = 'http://10.200.200.224:5000/event-state/charmany'
         self.jci_device_map = {
         'VMA-2-6': '27',
         'VMA-2-4': '29',
@@ -171,6 +171,7 @@ class Setteroccvav(Agent):
         self.trane_setpoint_topic = trane_setpoint_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
+        self.url = 'http://10.200.200.224:5000/event-state/charmany'
 
         _log.debug(f'*** [Setter Agent INFO] *** -  CONFIGS SET SUCCESS!')
 
@@ -284,16 +285,19 @@ class Setteroccvav(Agent):
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
-        result = self.vip.rpc.call('platform.actuator', 'scrape_all', 'slipstream_internal/slipstream_hq/33333').get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  scrape_all ON BAC0 {result}!')
 
-        sig_payload_read = result['signal_payload']
-        _log.debug(f'*** [Setter Agent INFO] *** -  signal_payload from BAC0 {sig_payload_read}!')
 
-        sig_duration_read = result['int_signal_duration']
-        _log.debug(f'*** [Setter Agent INFO] *** -  int_signal_duration from BAC0 {sig_duration_read}!')
+        
+        requests = (grequests.get(self.url),)
+        result, = grequests.map(requests)
 
-        if sig_payload_read == 1:
+
+        sig_payload = result['current_state']
+        #sig_payload = 0
+        _log.debug(f'*** [Setter Agent INFO] *** -  signal_payload from Flask App is {sig_payload}!')
+
+
+        if sig_payload == 1:
             _log.debug(f'*** [Setter Agent INFO] *** -  DR EVENT GO!!!!')
 
             result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_master).get(timeout=20)

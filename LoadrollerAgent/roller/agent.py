@@ -61,40 +61,46 @@ class Roller(Agent):
         "revertpoint_default": "1",
         "unnoccupied_value": "2",
         "building_topic": "slipstream_internal/slipstream_hq",
-        "jci_setpoint_topic": "OCC-SCHEDULE",
-        "trane_setpoint_topic": "Occupancy Request",
+        "jci_occ_topic": "OCC-SCHEDULE",
+        "trane_occ_topic": "Occupancy Request",
         "jci_zonetemp_topic": "ZN-T",
         "trane_zonetemp_topic": "Space Temperature Local",
         "jci_zonetemp_setpoint_topic": "ZN-SP",
         "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
         "jci_clg_max_flow": "CLG-MAXFLOW",
         "trane_clg_max_flow": "Air Flow Setpoint Maximum",
+        "large_vav_threshold_cfm": "1000",
+        "load_control_capacity_percent": "50"
         }
 
         revertpoint_default = float(self.default_config["revertpoint_default"])
         unnoccupied_value = float(self.default_config["unnoccupied_value"])
         building_topic = str(self.default_config["building_topic"])
-        jci_setpoint_topic = str(self.default_config["jci_setpoint_topic"])            
-        trane_setpoint_topic = str(self.default_config["trane_setpoint_topic"])
+        jci_occ_topic = str(self.default_config["jci_occ_topic"])            
+        trane_occ_topic = str(self.default_config["trane_occ_topic"])
         jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
         trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
         jci_zonetemp_setpoint_topic = str(self.default_config["jci_zonetemp_setpoint_topic"])
         trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
         jci_clg_max_flow = str(self.default_config["jci_clg_max_flow"])
         trane_clg_max_flow = str(self.default_config["trane_clg_max_flow"])
+        large_vav_threshold_cfm = float(self.default_config["large_vav_threshold_cfm"])
+        load_control_capacity_percent = float(self.default_config["load_control_capacity_percent"])
 
 
         self.revertpoint_default = revertpoint_default
         self.unnoccupied_value = unnoccupied_value
         self.building_topic  = building_topic
-        self.jci_setpoint_topic = jci_setpoint_topic
-        self.trane_setpoint_topic = trane_setpoint_topic
+        self.jci_occ_topic = jci_occ_topic
+        self.trane_occ_topic = trane_occ_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
         self.jci_clg_max_flow = jci_clg_max_flow
         self.trane_clg_max_flow = trane_clg_max_flow
+        self.large_vav_threshold_cfm = large_vav_threshold_cfm
+        self.load_control_capacity_percent = load_control_capacity_percent
         _log.debug(f'*** [Setter Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
 
@@ -164,14 +170,16 @@ class Roller(Agent):
             revertpoint_default = float(config["revertpoint_default"])
             unnoccupied_value = float(config["unnoccupied_value"])
             building_topic = str(config["building_topic"])
-            jci_setpoint_topic = str(config["jci_setpoint_topic"])            
-            trane_setpoint_topic = str(config["trane_setpoint_topic"])
+            jci_occ_topic = str(config["jci_occ_topic"])            
+            trane_occ_topic = str(config["trane_occ_topic"])
             jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
             trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
             jci_zonetemp_setpoint_topic = str(config["jci_zonetemp_setpoint_topic"])
             trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
             jci_clg_max_flow = str(config["jci_clg_max_flow"])
             trane_clg_max_flow = str(config["trane_clg_max_flow"])
+            large_vav_threshold_cfm = float(config["large_vav_threshold_cfm"])
+            load_control_capacity_percent = float(config["load_control_capacity_percent"])
 
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
@@ -184,14 +192,16 @@ class Roller(Agent):
         self.revertpoint_default = revertpoint_default
         self.unnoccupied_value = unnoccupied_value
         self.building_topic  = building_topic
-        self.jci_setpoint_topic = jci_setpoint_topic
-        self.trane_setpoint_topic = trane_setpoint_topic
+        self.jci_occ_topic = jci_occ_topic
+        self.trane_occ_topic = trane_occ_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
         self.jci_clg_max_flow = jci_clg_max_flow
         self.trane_clg_max_flow = trane_clg_max_flow
+        self.large_vav_threshold_cfm = large_vav_threshold_cfm
+        self.load_control_capacity_percent = load_control_capacity_percent
 
         _log.debug(f'*** [Setter Agent INFO] *** -  CONFIGS SET SUCCESS!')
 
@@ -278,7 +288,7 @@ class Roller(Agent):
         for device in self.jci_device_map.values():
             #_log.debug(f'*** [Setter Agent INFO] *** -  COLLECTING DATA ON DEVICE {device}')
             topic_jci = '/'.join([self.building_topic, device])
-            final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
+            final_topic_jci_occ = '/'.join([topic_jci, self.jci_occ_topic])
             final_topic_jci_znt = '/'.join([topic_jci, self.jci_zonetemp_topic])
             final_topic_jci_znt_sp = '/'.join([topic_jci, self.jci_zonetemp_setpoint_topic])
             final_topic_jci_clg_max = '/'.join([topic_jci, self.jci_clg_max_flow])
@@ -287,8 +297,8 @@ class Roller(Agent):
             # 1 == occ, 2 == unnoc
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
-            revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
+            set_multi_topic_values_master.append((final_topic_jci_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_jci_occ, None)) # TO SET FOR REVERT OCC POINT IN VAV 
             get_multi_topic_values_master.append((final_topic_jci_znt)) # GET MULTIPLE Zone Temp
             get_multi_topic_values_master.append((final_topic_jci_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
             get_multi_topic_values_master.append((final_topic_jci_clg_max)) # GET MULTIPLE Coolig Max Flow Setpoint
@@ -300,7 +310,7 @@ class Roller(Agent):
 
         for device in self.trane_device_map.values():
             topic_trane = '/'.join([self.building_topic, device])
-            final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
+            final_topic_trane_occ = '/'.join([topic_trane, self.trane_occ_topic])
             final_topic_trane_znt = '/'.join([topic_trane, self.trane_zonetemp_topic])
             final_topic_trane_znt_sp = '/'.join([topic_trane, self.trane_zonetemp_setpoint_topic])
             final_topic_trane_clg_max = '/'.join([topic_trane, self.trane_clg_max_flow])
@@ -310,8 +320,8 @@ class Roller(Agent):
             # Need to convert trane temps to F (x * 1.8) + 32
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
-            revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
+            set_multi_topic_values_master.append((final_topic_trane_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_trane_occ, None)) # TO SET FOR REVERT OCC POINT IN VAV 
             get_multi_topic_values_master.append((final_topic_trane_znt)) # GET MULTIPLE Zone Temp
             get_multi_topic_values_master.append((final_topic_trane_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
             get_multi_topic_values_master.append((final_topic_trane_clg_max)) # GET MULTIPLE Coolig Max Flow Setpoint
