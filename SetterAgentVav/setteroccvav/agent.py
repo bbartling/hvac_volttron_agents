@@ -83,14 +83,13 @@ class Setteroccvav(Agent):
         _log.debug(f'*** [Setter Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
 
+        self.url = "http://10.200.200.224:5000/event-state/charmany"
         self.agent_id = "dr_event_setpoint_adj_agent"
-        self.url = 'http://10.200.200.224:5000/event-state/charmany'
+
         self.jci_device_map = {
         'VMA-2-6': '27',
         'VMA-2-4': '29',
         'VMA-2-7': '30',
-        }
-        '''
         'VMA-1-8': '6',
         'VMA-1-7': '7',
         'VMA-1-6': '8',
@@ -118,7 +117,7 @@ class Setteroccvav(Agent):
         'VMA-1-15': '38',
         'VMA-1-16': '39',
         }
-        '''
+
 
         self.trane_device_map = {
         'VAV-2-5': '12028',
@@ -287,26 +286,36 @@ class Setteroccvav(Agent):
 
 
 
-        
-        requests = (grequests.get(self.url),)
-        result, = grequests.map(requests)
+        try:
+            requests = (grequests.get(self.url),)
+            result, = grequests.map(requests)
+            contents = result.json()
+            _log.debug(f"Flask App API contents: {contents}")
+            _log.debug(f"Flask App API TYPE contents: {type(contents)}")
+            sig_payload = contents["current_state"]
+
+            #sig_payload = 0
+
+        except Exception as error:
+            _log.debug(f"*** [Setter Agent INFO] *** - Error trying Flask App API {error}")
+            _log.debug(f"*** [Setter Agent INFO] *** - RESORTING TO NO DEMAND RESPONSE EVENT")
+            sig_payload = 0
 
 
-        sig_payload = result['current_state']
-        #sig_payload = 0
-        _log.debug(f'*** [Setter Agent INFO] *** -  signal_payload from Flask App is {sig_payload}!')
+
+        _log.debug(f'*** [Setter Agent INFO] *** - signal_payload from Flask App is {sig_payload}!')
 
 
         if sig_payload == 1:
-            _log.debug(f'*** [Setter Agent INFO] *** -  DR EVENT GO!!!!')
+            _log.debug(f'*** [Setter Agent INFO] *** - DR EVENT GO!!!!')
 
             result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_master).get(timeout=20)
             _log.debug(f'*** [Setter Agent INFO] *** -  set_multiple_points ON ALL VAVs WRITE SUCCESS!')
 
             _log.debug(f'*** [Setter Agent INFO] *** -  SETTING UP GEVENT SLEEP!')
 
-            # demand response event duration comes from BAC0
-            gevent.sleep(sig_duration_read)
+            # For now manually set demand response event duration
+            gevent.sleep(7200)
             _log.debug(f'*** [Setter Agent INFO] *** -  GEVENT SLEEP DONE!')
 
             result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
