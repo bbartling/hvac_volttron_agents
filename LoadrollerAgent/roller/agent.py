@@ -5,7 +5,7 @@ Agent documentation goes here.
 
 __docformat__ = 'reStructuredText'
 
-import logging, gevent, heapq
+import logging, gevent, heapq, grequests, requests
 import sys
 from datetime import timedelta as td, datetime as dt
 from volttron.platform.agent.utils import format_timestamp, get_aware_utc_now
@@ -14,6 +14,7 @@ from volttron.platform.vip.agent import Agent, Core, RPC
 from volttron.platform.scheduling import cron
 import random
 import pandas as pd
+import numpy as np
 
 
 _log = logging.getLogger(__name__)
@@ -104,7 +105,8 @@ class Roller(Agent):
         _log.debug(f'*** [Setter Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
 
-        self.agent_id = "dr_event_setpoint_adj_agent"
+        self.agent_id = "electric_load_roller_agent"
+        self.url = "http://10.200.200.224:5000/event-state/charmany"
 
         self.jci_device_map = {
         'VMA-2-6': '27',
@@ -137,7 +139,6 @@ class Roller(Agent):
         'VMA-1-15': '38',
         'VMA-1-16': '39',
         }
-
 
         self.trane_device_map = {
         'VAV-2-5': '12028',
@@ -246,7 +247,7 @@ class Roller(Agent):
         """
 
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
-        self.core.periodic(600, self.raise_setpoints_up)
+        self.core.periodic(300, self.raise_setpoints_up)
         _log.debug(f'*** [Setter Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
@@ -263,9 +264,11 @@ class Roller(Agent):
 
         # start by creating our topic_values
         schedule_request = []
-        set_multi_topic_values_master = []
+        #set_multi_topic_values_master = []
         revert_multi_topic_values_master = []
         get_multi_topic_values_master = []
+        set_multi_topic_values_algorithm = []
+        revert_multi_topic_values_algorithm = []
 
 
         # wrap the topic and timestamps up in a list and add it to the schedules list
@@ -297,7 +300,7 @@ class Roller(Agent):
             # 1 == occ, 2 == unnoc
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_jci_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
+            #set_multi_topic_values_master.append((final_topic_jci_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_jci_occ, None)) # TO SET FOR REVERT OCC POINT IN VAV 
             get_multi_topic_values_master.append((final_topic_jci_znt)) # GET MULTIPLE Zone Temp
             get_multi_topic_values_master.append((final_topic_jci_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
@@ -320,7 +323,7 @@ class Roller(Agent):
             # Need to convert trane temps to F (x * 1.8) + 32
             
             # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_trane_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
+            #set_multi_topic_values_master.append((final_topic_trane_occ, self.unnoccupied_value)) # TO SET OCC POINT IN VAV UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_trane_occ, None)) # TO SET FOR REVERT OCC POINT IN VAV 
             get_multi_topic_values_master.append((final_topic_trane_znt)) # GET MULTIPLE Zone Temp
             get_multi_topic_values_master.append((final_topic_trane_znt_sp)) # GET MULTIPLE Zone Temp Setpoint
@@ -331,20 +334,153 @@ class Roller(Agent):
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
 
-        result_all = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_multi_topic_values_master).get(timeout=90)
-        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result_all}')
 
-        #result_all_df = pd.DataFrame(result_all)
-        #result_all_df = pd.DataFrame.from_dict(result_all, orient='columns')
-        #_log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points PANDAS DF {result_all_df.head(1)}')
+        try:
+            requests = (grequests.get(self.url),)
+            result, = grequests.map(requests)
+            contents = result.json()
+            _log.debug(f"Flask App API contents: {contents}")
+            _log.debug(f"Flask App API TYPE contents: {type(contents)}")
+            sig_payload = contents["current_state"]
 
-        #result_all_df.to_csv('get_multiple_points.csv')
+            #sig_payload = 0
+
+        except Exception as error:
+            _log.debug(f"*** [Setter Agent INFO] *** - Error trying Flask App API {error}")
+            _log.debug(f"*** [Setter Agent INFO] *** - RESORTING TO NO DEMAND RESPONSE EVENT")
+            sig_payload = 0
+
+
+        _log.debug(f'*** [Setter Agent INFO] *** - signal_payload from Flask App is {sig_payload}!')
+
+
+        if sig_payload == 1:
+            _log.debug(f'*** [Setter Agent INFO] *** - ELECTRICAL LOAD ROLLER GO, lets grab alot of data!')
+
+            data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_multi_topic_values_master).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {data}')           
+
+            df = pd.DataFrame([[*key.split('/'), value] for dictionary in data for key, value in dictionary.items()])
+            df = df.rename(columns={2: 'VAV_ID', 4: 'value'})
+
+            df['col'] = df[3].map({
+                    'ZN-T': 'Zone_Temps',
+                    'Space Temperature Local': 'Zone_Temps',
+                    'ZN-SP': 'Zone_Temp_Setpoints',
+                    'Space Temperature Setpoint Active': 'Zone_Temp_Setpoints',
+                    'CLG-MAXFLOW': 'Max_Clg_Flow',
+                    'Air Flow Setpoint Maximum': 'Max_Clg_Flow',
+            })
+
+            df[['VAV_ID', 'col', 'value']]
+            df = df.pivot(index='VAV_ID', columns='col', values='value').reset_index()
+
+            #Prevent division by zero error
+            df = df.replace(0, 1)
+
+            df['Large_VAV_Threshold'] = self.large_vav_threshold_cfm
+            df['ZNT_Dev'] = df['Zone_Temps'] - df['Zone_Temp_Setpoints']
+            df['Air_Flow_Dev'] = df['Max_Clg_Flow'] - df['Large_VAV_Threshold']
+
+            df['Temp_Ratio'] = df['Zone_Temps'] / df['Zone_Temp_Setpoints'].round(3)
+            df['Air_Flow_Ratio'] = (df['Max_Clg_Flow']/df['Large_VAV_Threshold']).round(3)
+
+            df['Rel_Temp_Dev'] = (df['ZNT_Dev'] / df['Zone_Temp_Setpoints']).round(3)
+            df['Rel_Air_Flow_Dev'] = (df['Air_Flow_Dev'] / df['Large_VAV_Threshold']).round(3)
+
+
+            df2 = df[['VAV_ID','Max_Clg_Flow','Large_VAV_Threshold','Zone_Temps','Zone_Temp_Setpoints','Air_Flow_Dev','ZNT_Dev']]
+            df2['score'] = (df['Temp_Ratio']/df['Air_Flow_Ratio']).round(3)
+            df2 = df2.sort_values(['score'], ascending=True).reset_index(drop=True)
+            df2['Zone_Shutdown_Priority'] = np.arange(0,len(df2))
+
+            df3 = df2[['VAV_ID','Max_Clg_Flow','Zone_Temps','Zone_Temp_Setpoints']]
+            df3_VAV_ID_copy = df3.VAV_ID.copy()
+
+            df3_VAV_ID_copy_list = list(df3_VAV_ID_copy)
+
+            zones_for_override_unnoc = int(((self.load_control_capacity_percent/100) * len(df3)))
+            df3_zones_for_override_unnoc = df3.head(zones_for_override_unnoc)
+
+
+            vavs_to_override_unnoc_list = list(df3_zones_for_override_unnoc.VAV_ID)
+            _log.debug(f'*** [Setter Agent INFO] *** -  VAVs to WRITE UNNOCUPIED {vavs_to_override_unnoc_list}!')
+
+
+            vavs_to_release_back_to_bas_list = [zone for zone in df3_VAV_ID_copy_list if zone not in vavs_to_override_unnoc_list]
+            _log.debug(f'*** [Setter Agent INFO] *** -  VAVs to RELEASE BACK TO BAS {vavs_to_release_back_to_bas_list}!')
+
+ 
+
+
+
+            for device in vavs_to_override_unnoc_list:
+                topic = '/'.join([self.building_topic, device])
+
+                if int(device) > 10000: # its a trane controller
+                    final_topic_occ = '/'.join([topic, self.trane_occ_topic])
+                    set_multi_topic_values_algorithm.append((final_topic_occ, self.unnoccupied_value)) # TO SET OCC POINT IN TRANE VAV UNNOCUPIED
+                else:
+                    final_topic_occ = '/'.join([topic, self.jci_occ_topic])
+                    set_multi_topic_values_algorithm.append((final_topic_occ, self.unnoccupied_value)) # TO SET OCC POINT IN JCI VAV UNNOCUPIED        
+
+                
+            for device in vavs_to_release_back_to_bas_list:
+                topic = '/'.join([self.building_topic, device])
+
+                
+                if int(device) > 10000: # its a trane controller
+                    final_topic_occ = '/'.join([topic, self.trane_occ_topic])
+                    revert_multi_topic_values_algorithm.append((final_topic_occ, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
+                else:
+                    final_topic_occ = '/'.join([topic, self.jci_occ_topic])
+                    revert_multi_topic_values_algorithm.append((final_topic_occ, None)) # BACNET RELEASE OCC POINT IN JCI VAV  
+
+
+            _log.debug(f'*** [Setter Agent INFO] *** -  DEVICES CALCULATED FOR ALGORITHM')
+
+
+            load_roller_data = df2.to_dict('list')
+            _log.debug(f"*** [Setter Agent INFO] *** - POSTING DATA {load_roller_data}")
+
+            override_zones_data = df3_zones_for_override_unnoc.VAV_ID.to_dict()
+            _log.debug(f"*** [Setter Agent INFO] *** - POSTING DATA {override_zones_data}")
+
+
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, set_multi_topic_values_algorithm).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  set_multi_topic_values_algorithm SUCCESS!')
+
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_algorithm).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  revert_multi_topic_values_algorithm SUCCESS!')
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", data=load_roller_data),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/override-check", data=override_zones_data),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED DATA OVERRIDE DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
+
+
+        else:
+ 
+ 
+            _log.debug(f'*** [Setter Agent INFO] *** -  DOING NOTHING!')
         
-        '''
-        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=90)
-        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
 
-        '''
+
 
 
 
