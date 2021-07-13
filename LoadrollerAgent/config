@@ -9,9 +9,7 @@
   "trane_zonetemp_topic": "Space Temperature Local",
   "jci_zonetemp_setpoint_topic": "ZN-SP",
   "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
-  "jci_clg_max_flow": "CLG-MAXFLOW",
-  "trane_clg_max_flow": "Air Flow Setpoint Maximum",
-  "large_vav_threshold_cfm": 1000,
-  "load_control_capacity_percent": 50
+  "znt_setpoint_threshold_degf": 72,
+  "vav_groups_to_override": 3
 
 }
