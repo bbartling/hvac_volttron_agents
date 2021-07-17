@@ -9,7 +9,8 @@
   "trane_zonetemp_topic": "Space Temperature Local",
   "jci_zonetemp_setpoint_topic": "ZN-SP",
   "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
-  "znt_setpoint_threshold_degf": 72,
-  "vav_groups_to_override": 3
+  "znt_setpoint_threshold_degf": "72",
+  "vav_groups_to_override": "3",
+
 
 }
