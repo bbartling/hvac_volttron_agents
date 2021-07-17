@@ -235,6 +235,8 @@ class Roller(Agent):
         for point,sensor_reading in message[0].items():
             if point == 'ZN-T' or point == 'Space Temperature Local':
                 _log.debug(f"*** [Handle Pub Sub INFO] *** Found a Zone Temp Published {point} that is {sensor_reading}")
+                if point == 'Space Temperature Local': # Fix Trane controller data that comes through in Metric
+                    sensor_reading = (9/5) * sensor_reading + 32
 
                 #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values is {self.znt_values}")
                 for key,value in self.znt_values.items():
