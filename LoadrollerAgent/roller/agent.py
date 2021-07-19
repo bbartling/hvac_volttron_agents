@@ -103,6 +103,7 @@ class Roller(Agent):
         self.nested_group_map = {
             'group_l1n' : {
             'score': 0,
+            'shed_count': 0,
             'VMA-1-1': '14',
             'VMA-1-2': '13',
             'VMA-1-3': '15',
@@ -114,6 +115,7 @@ class Roller(Agent):
             },
             'group_l1s' : {
             'score': 0,
+            'shed_count': 0,
             'VMA-1-6': '8',
             'VMA-1-8': '6',
             'VMA-1-9': '10',
@@ -125,6 +127,7 @@ class Roller(Agent):
             },
             'group_l2n' : {
             'score': 0,
+            'shed_count': 0,
             'VAV-2-1': '12032',
             'VAV-2-2': '12033',
             'VMA-2-3': '31',
@@ -136,6 +139,7 @@ class Roller(Agent):
             },
             'group_l2s' : {
             'score': 0,
+            'shed_count': 0,
             'VMA-2-8': '34',
             'VAV-2-9': '12035',
             'VMA-2-10': '36',
@@ -226,9 +230,7 @@ class Roller(Agent):
         :param message: "All" messaged published by the Platform Driver for the CSV Driver containing values for all
         registers on the device
         """
-
-
-        #_log.debug(f"*** [Handle Pub Sub INFO] *** Looking at device {topic}")
+        
         topic = topic.strip('/all')
         _log.debug(f"*** [Handle Pub Sub INFO] *** topic_formatted {topic}")
 
@@ -238,15 +240,9 @@ class Roller(Agent):
                 if point == 'Space Temperature Local': # Fix Trane controller data that comes through in Metric
                     sensor_reading = (9/5) * sensor_reading + 32
 
-                #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values is {self.znt_values}")
-                for key,value in self.znt_values.items():
-                    if topic == key:
-                        _log.debug(f"*** [Handle Pub Sub INFO] *** Found a match on {topic} and {key} the value is {value}")
-                        self.znt_values.update({str(key):float(sensor_reading)})
-
-
+        self.znt_values[topic] = float(sensor_reading)
         _log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
-        #_log.debug("*** [Handle Pub Sub INFO] *** - Device {} Publish: {}".format(topic, message))
+
 
 
     @Core.receiver("onstart")
@@ -270,7 +266,7 @@ class Roller(Agent):
         topics=[]
         for group_name, group in device_map.items():
             for key,value in group.items():
-                if key != 'score':
+                if key not in ('score','shed_count'):
                     final_topic_group = '/'.join(["devices",self.building_topic, value])
                     # if int(value) > 10000: # its a trane controller
                     #     final_topic_group_znt = '/'.join([final_topic_group, self.trane_zonetemp_topic])
@@ -279,6 +275,38 @@ class Roller(Agent):
                     topics.append(final_topic_group) # GET MULTIPLE Zone Temp for this group
         self.znt_values = {topic:None for topic in topics}
         return topics
+
+
+    def get_group_temps(self,group_name):
+        temps = []
+        for key,value in nested_group_map[group_name]:
+            if key not in ('score','shed_count'):
+                temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
+
+        return temps
+
+
+    def score_groups(self):
+        for key in nested_group_map:
+            group_temps = self.get_group_temps(key)
+            nested_group_map[key]['score'] = self.znt_setpoint_threshold_degf - sum(group_temps)/len(group_temps)
+            
+
+    def get_shed_group(self):
+        min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
+        avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
+
+        '''
+        avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count and group['score'] > -1]
+        
+        add in some extra logic to call same group more than once is score is ideal
+        '''
+        sorted_groups = sorted(avail_groups,key = lambda x: x[1])
+
+        return sorted_groups[0][0]
+
+
+
 
     def dr_event_activate(self):
 
@@ -389,11 +417,11 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  l2s_znt values {l2s_znt_data}')
 
         #CONVERT TRAIN POINTS THAT ARE IN DEG C TO DEG F
-        l1n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1n_znt_data[0].items()}
-        l1s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1s_znt_data[0].items()}
-        l2n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2n_znt_data[0].items()}
-        l2s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2s_znt_data[0].items()}
-        _log.debug(f'*** [Roller Agent INFO] *** -  Converted deg C to deg F Success')
+        # l1n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1n_znt_data[0].items()}
+        # l1s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1s_znt_data[0].items()}
+        # l2n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2n_znt_data[0].items()}
+        # l2s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2s_znt_data[0].items()}
+        # _log.debug(f'*** [Roller Agent INFO] *** -  Converted deg C to deg F Success')
 
         l1n_znt_average = sum(l1n_znt_data[0].values()) / len(l1n_znt_data[0])
         _log.debug(f'*** [Roller Agent INFO] *** -  l1n_znt_average is {l1n_znt_average} deg F')
