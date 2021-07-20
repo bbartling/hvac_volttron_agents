@@ -230,7 +230,7 @@ class Roller(Agent):
         :param message: "All" messaged published by the Platform Driver for the CSV Driver containing values for all
         registers on the device
         """
-        
+
         topic = topic.strip('/all')
         _log.debug(f"*** [Handle Pub Sub INFO] *** topic_formatted {topic}")
 
@@ -240,8 +240,8 @@ class Roller(Agent):
                 if point == 'Space Temperature Local': # Fix Trane controller data that comes through in Metric
                     sensor_reading = (9/5) * sensor_reading + 32
 
-        self.znt_values[topic] = float(sensor_reading)
-        _log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
+            self.znt_values[topic] = float(sensor_reading)
+            #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
 
 
 
@@ -257,9 +257,8 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        #self.core.periodic(300, self.dr_event_activate)
+        self.core.periodic(300, self.dr_event_activate)
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
-
 
 
     def create_topics_from_map(self,device_map):
@@ -268,10 +267,6 @@ class Roller(Agent):
             for key,value in group.items():
                 if key not in ('score','shed_count'):
                     final_topic_group = '/'.join(["devices",self.building_topic, value])
-                    # if int(value) > 10000: # its a trane controller
-                    #     final_topic_group_znt = '/'.join([final_topic_group, self.trane_zonetemp_topic])
-                    # else:
-                    #     final_topic_group_znt = '/'.join([final_topic_group, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
                     topics.append(final_topic_group) # GET MULTIPLE Zone Temp for this group
         self.znt_values = {topic:None for topic in topics}
         return topics
@@ -279,33 +274,40 @@ class Roller(Agent):
 
     def get_group_temps(self,group_name):
         temps = []
-        for key,value in nested_group_map[group_name]:
+        for key,value in self.nested_group_map[group_name].items():
+            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps key is {key}')
+            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! value is {value}')
             if key not in ('score','shed_count'):
                 temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
-
+        _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
         return temps
 
 
+    # this method call get_group_temps
     def score_groups(self):
-        for key in nested_group_map:
+        for key in self.nested_group_map:
+            #_log.debug(f'*** [Roller Agent INFO] *** - score_groups key is {key}!')
             group_temps = self.get_group_temps(key)
-            nested_group_map[key]['score'] = self.znt_setpoint_threshold_degf - sum(group_temps)/len(group_temps)
-            
+            #_log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
+            empty_list_checker = None in group_temps
+            if empty_list_checker:
+                _log.debug(f'*** [Roller Agent INFO] *** - score_groups NoneType Found!')
+            else:
+                self.nested_group_map[key]['score'] = self.znt_setpoint_threshold_degf - sum(group_temps)/len(group_temps)
+                _log.debug(f'*** [Roller Agent INFO] *** - score_groups SUCCESS!')
+            _log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
+
 
     def get_shed_group(self):
         min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
-
         '''
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count and group['score'] > -1]
         
         add in some extra logic to call same group more than once is score is ideal
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1])
-
         return sorted_groups[0][0]
-
-
 
 
     def dr_event_activate(self):
@@ -317,7 +319,16 @@ class Roller(Agent):
 
         _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
 
+        self.score_groups()
+        
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.score_groups() and self.get_shed_group() SUCCESS')
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.get_shed_group() is {self.get_shed_group()}')        
 
+        self.nested_group_map[self.get_shed_group()]['shed_count'] = self.nested_group_map[self.get_shed_group()]['shed_count'] + 1
+        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS {self.nested_group_map}')
+
+        '''
         # create start and end timestamps
         _now = get_aware_utc_now()
         str_start = format_timestamp(_now)
@@ -465,6 +476,8 @@ class Roller(Agent):
         #for key,value in sorted_nested_group_map_copy.items():
             #_log.debug(f'*** [Roller Agent INFO] *** -  key in sorted_nested_group_map_copy is {key}')
             #_log.debug(f'*** [Roller Agent INFO] *** -  value in sorted_nested_group_map_copy is {value}')
+
+        '''
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
