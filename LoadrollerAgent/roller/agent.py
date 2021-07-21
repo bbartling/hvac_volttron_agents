@@ -295,7 +295,7 @@ class Roller(Agent):
             else:
                 self.nested_group_map[key]['score'] = self.znt_setpoint_threshold_degf - sum(group_temps)/len(group_temps)
                 _log.debug(f'*** [Roller Agent INFO] *** - score_groups SUCCESS!')
-            _log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
+            #_log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
 
 
     def get_shed_group(self):
@@ -307,177 +307,135 @@ class Roller(Agent):
         add in some extra logic to call same group more than once is score is ideal
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1])
-        return sorted_groups[0][0]
+        #_log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group is {sorted_groups}')
+        sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
+        #_log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
+        return sorted_list
 
 
-    def dr_event_activate(self):
-
-        def Convert(a):
-            it = iter(a)
-            converted_dict = dict(zip(it, it))
-            return converted_dict
-
-        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
-
-        self.score_groups()
-        
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.score_groups() and self.get_shed_group() SUCCESS')
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.get_shed_group() is {self.get_shed_group()}')        
-
-        self.nested_group_map[self.get_shed_group()]['shed_count'] = self.nested_group_map[self.get_shed_group()]['shed_count'] + 1
-        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS {self.nested_group_map}')
-
-        '''
+    def schedule_for_actuator(self,group):
         # create start and end timestamps
         _now = get_aware_utc_now()
         str_start = format_timestamp(_now)
         _end = _now + td(seconds=10)
         str_end = format_timestamp(_end)
-
-        # start by creating our topic_values
         schedule_request = []
-        get_znt_group_l1n_master = []
-        get_znt_group_l1s_master = []
-        get_znt_group_l2n_master = []
-        get_znt_group_l2s_master = []
-
-
-
         # wrap the topic and timestamps up in a list and add it to the schedules list
-        for key,value in self.nested_group_map['group_l1n'].items():
-            if key != 'score':
-                topic_sched_group_l1n = '/'.join([self.building_topic, value])
-                schedule_request.append([topic_sched_group_l1n, "str_start", "str_end"])
-
-        # wrap the topic and timestamps up in a list and add it to the schedules list
-        for key,value in self.nested_group_map['group_l1s'].items():
-            if key != 'score':
-                topic_sched_group_l1n = '/'.join([self.building_topic, value])
-                schedule_request.append([topic_sched_group_l1n, "str_start", "str_end"])
-
-        # wrap the topic and timestamps up in a list and add it to the schedules list
-        for key,value in self.nested_group_map['group_l2n'].items():
-            if key != 'score':
-                topic_sched_group_l1n = '/'.join([self.building_topic, value])
-                schedule_request.append([topic_sched_group_l1n, "str_start", "str_end"])
-
-        # wrap the topic and timestamps up in a list and add it to the schedules list
-        for key,value in self.nested_group_map['group_l2s'].items():
-            if key != 'score':
-                topic_sched_group_l1n = '/'.join([self.building_topic, value])
-                schedule_request.append([topic_sched_group_l1n, "str_start", "str_end"])
-
-        #_log.debug(f'*** [Roller Agent INFO] *** -  schedule_request debugg {schedule_request}')
-
+        for key,value in self.nested_group_map[group].items():
+            if key not in ('score','shed_count'):
+                topic_sched_group_l1n = '/'.join([self.building_topic, str(value)])
+                schedule_request.append([topic_sched_group_l1n, str_start, str_end])
         # send the request to the actuator
         result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS! {schedule_request}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR SCHEDULE EVENT SUCESS {result}')
+        
 
-
-        for key,value in self.nested_group_map['group_l1n'].items():
-            if key != 'score':
-                topic_group_l1n = '/'.join([self.building_topic, value])
+    def rpc_get_mult_temps(self,group):
+        get_zone_temps_final = []
+        # call schedule actuator agent from different method
+        schedule_request = self.schedule_for_actuator(group)
+        for key,value in self.nested_group_map[group].items():
+            if key not in ('score','shed_count'):
+                topic_group_ = '/'.join([self.building_topic, str(value)])
+                _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps topic_group_ is {topic_group_}')
                 if int(value) > 10000: # its a trane controller
-                    final_topic_group_l1n_znt = '/'.join([topic_group_l1n, self.trane_zonetemp_topic])
+                    get_zone_temps = '/'.join([topic_group_, self.trane_zonetemp_topic])
+                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps Trane get_zone_temps is {get_zone_temps}')
                 else:
-                    final_topic_group_l1n_znt = '/'.join([topic_group_l1n, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                get_znt_group_l1n_master.append(final_topic_group_l1n_znt) # GET MULTIPLE Zone Temp for this group
+                    get_zone_temps = '/'.join([topic_group_, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
+                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps JCI get_zone_temps is {get_zone_temps}')
+                get_zone_temps_final.append(get_zone_temps) # GET MULTIPLE Zone Temp for this group
+        return get_zone_temps_final
 
-        l1n_znt_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_znt_group_l1n_master).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1n_znt values {l1n_znt_data}')   
 
-
-        for key,value in self.nested_group_map['group_l1s'].items():
-            if key != 'score':
-                topic_group_l1s = '/'.join([self.building_topic, value])
+    def rpc_set_mult_zones_unoccupied(self,group):
+        get_zone_temps_final = []
+        for key,value in self.nested_group_map[group].items():
+            if key not in ('score','shed_count'):
+                topic_group_ = '/'.join([self.building_topic, str(value)])
+                _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps topic_group_ is {topic_group_}')
                 if int(value) > 10000: # its a trane controller
-                    final_topic_group_l1s_znt = '/'.join([topic_group_l1s, self.trane_zonetemp_topic])
+                    get_zone_temps = '/'.join([topic_group_, self.trane_zonetemp_topic])
+                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps Trane get_zone_temps is {get_zone_temps}')
                 else:
-                    final_topic_group_l1s_znt = '/'.join([topic_group_l1s, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                get_znt_group_l1s_master.append(final_topic_group_l1s_znt) # GET MULTIPLE Zone Temp for this group
-
-        l1s_znt_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_znt_group_l1s_master).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1s_znt values {l1s_znt_data}') 
-
-
-        for key,value in self.nested_group_map['group_l2n'].items():
-            if key != 'score':
-                topic_group_l2n = '/'.join([self.building_topic, value])
-                if int(value) > 10000: # its a trane controller
-                    final_topic_group_l2n_znt = '/'.join([topic_group_l2n, self.trane_zonetemp_topic])
-                else:
-                    final_topic_group_l2n_znt = '/'.join([topic_group_l2n, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                get_znt_group_l2n_master.append(final_topic_group_l2n_znt) # GET MULTIPLE Zone Temp for this group
-
-        l2n_znt_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_znt_group_l2n_master).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2n_znt values {l2n_znt_data}')
+                    get_zone_temps = '/'.join([topic_group_, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
+                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps JCI get_zone_temps is {get_zone_temps}')
+                get_zone_temps_final.append(get_zone_temps) # GET MULTIPLE Zone Temp for this group
+        return get_zone_temps_final
 
 
-        for key,value in self.nested_group_map['group_l2s'].items():
-            if key != 'score':
+    def dr_event_activate(self):
+        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
 
-                topic_group_l2s = '/'.join([self.building_topic, value])
-                if int(value) > 10000: # its a trane controller
-                    final_topic_group_l2s_znt = '/'.join([topic_group_l2s, self.trane_zonetemp_topic])
-                else:
-                    final_topic_group_l2s_znt = '/'.join([topic_group_l2s, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                get_znt_group_l2s_master.append(final_topic_group_l2s_znt) # GET MULTIPLE Zone Temp for this group
+        # Use the Zone Temp Data to Score the Groups
+        # Pick the Zone to Shed
+        self.score_groups()
+        shed_this_zone = self.get_shed_group()
+        _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')        
 
-        l2s_znt_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', get_znt_group_l2s_master).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2s_znt values {l2s_znt_data}')
-
-        #CONVERT TRAIN POINTS THAT ARE IN DEG C TO DEG F
-        # l1n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1n_znt_data[0].items()}
-        # l1s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l1s_znt_data[0].items()}
-        # l2n_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2n_znt_data[0].items()}
-        # l2s_znt_data[0] = {key: (9/5)*value+32 if value<40 else value for key,value in l2s_znt_data[0].items()}
-        # _log.debug(f'*** [Roller Agent INFO] *** -  Converted deg C to deg F Success')
-
-        l1n_znt_average = sum(l1n_znt_data[0].values()) / len(l1n_znt_data[0])
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1n_znt_average is {l1n_znt_average} deg F')
-        #_log.debug(f'*** [Roller Agent INFO] *** -  l1n_znt_data values {l1n_znt_data} after averages')
-
-        l1s_znt_average = sum(l1s_znt_data[0].values()) / len(l1s_znt_data[0])
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1s_znt_average is {l1s_znt_average} deg F')
-        #_log.debug(f'*** [Roller Agent INFO] *** -  l1s_znt_data values {l1s_znt_data} after averages')
-
-        l2n_znt_average = sum(l2n_znt_data[0].values()) / len(l2n_znt_data[0])
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2n_znt_average is {l2n_znt_average} deg F')
-        #_log.debug(f'*** [Roller Agent INFO] *** -  l2n_znt_data values {l2n_znt_data} after averages')
-
-        l2s_znt_average = sum(l2s_znt_data[0].values()) / len(l2s_znt_data[0])
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2s_znt_average is {l2s_znt_average} deg F')
-        #_log.debug(f'*** [Roller Agent INFO] *** -  l2s_znt_data values {l2s_znt_data} after averages')
-
-
-        l1n_znt_score = l1n_znt_average - self.znt_setpoint_threshold_degf
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1n_znt_score is {l1n_znt_score}')
-
-        l1s_znt_score = l1s_znt_average - self.znt_setpoint_threshold_degf
-        _log.debug(f'*** [Roller Agent INFO] *** -  l1s_znt_score is {l1s_znt_score}')
-
-        l2n_znt_score = l2n_znt_average - self.znt_setpoint_threshold_degf
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2n_znt_score is {l2n_znt_score}')
-
-        l2s_znt_score = l2s_znt_average - self.znt_setpoint_threshold_degf
-        _log.debug(f'*** [Roller Agent INFO] *** -  l2s_znt_score is {l2s_znt_score}')
-
-        nested_group_map_copy = self.nested_group_map
-        nested_group_map_copy['group_l1n']['score'] = l1n_znt_score
-        nested_group_map_copy['group_l1s']['score'] = l1s_znt_score
-        nested_group_map_copy['group_l2n']['score'] = l2n_znt_score
-        nested_group_map_copy['group_l2s']['score'] = l2s_znt_score
-
-        # sorting processes
-        sorted_nested_group_map_copy = sorted(nested_group_map_copy, key = lambda x: nested_group_map_copy[x]['score'])
-        _log.debug(f'*** [Roller Agent INFO] *** -  sorted_nested_group_map_copy is {sorted_nested_group_map_copy}')
-
-        #for key,value in sorted_nested_group_map_copy.items():
-            #_log.debug(f'*** [Roller Agent INFO] *** -  key in sorted_nested_group_map_copy is {key}')
-            #_log.debug(f'*** [Roller Agent INFO] *** -  value in sorted_nested_group_map_copy is {value}')
 
         '''
+        zones = self.rpc_get_mult_temps(shed_this_zone)
+
+        get_zones_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zones).get(timeout=90)
+        _log.debug(f'*** [Roller Agent INFO] *** -  get_zones_data values is {get_zones_data}')
+
+
+
+        # send the request to the actuator
+        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
+        _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
+
+
+        for device in self.jci_device_map.values():
+            topic_jci = '/'.join([self.building_topic, device])
+            final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
+
+            # BACnet enum point for VAV occ
+            # 1 == occ, 2 == unnoc
+
+            # create a (topic, value) tuple and add it to our topic values
+            set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
+            get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
+
+        # now we can send our set_multiple_points request, use the basic form with our additional params
+        _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
+
+
+        for device in self.trane_device_map.values():
+            topic_trane = '/'.join([self.building_topic, device])
+            final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
+
+            # BACnet enum point for VAV occ
+            # 1 == occ, 2 == unnoc
+
+            # create a (topic, value) tuple and add it to our topic values
+            set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
+            revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
+            get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
+
+        # now we can send our set_multiple_points request, use the basic form with our additional params
+        _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
+
+
+
+        result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
+
+
+
+        
+        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
+        '''
+
+        # Move this code to end after RPC call to UNOC the Zones
+        # Add a 1 to the zone that was shed for memory on algorithm calculation
+        zone_to_add_count = self.get_shed_group()[0]
+        self.nested_group_map[zone_to_add_count]['shed_count'] = self.nested_group_map[zone_to_add_count]['shed_count'] + 1
+        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS {self.nested_group_map}')
+
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
