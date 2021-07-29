@@ -53,47 +53,55 @@ class Roller(Agent):
         _log.debug("vip_identity: " + self.core.identity)
 
 
+
         self.default_config = {
-        "revertpoint_default": "1",
-        "unnoccupied_value": "2",
+        "load_shifting_cycle_time_seconds": "1800",
+        "preocc_zone_sp_shift": "-3.0",
+        "pre_cool_hour_start": "05:00", 
+        "pre_cool_hour_end": "08:00",
+        "peak_oatemp_hour_start": "13:00", 
+        "peak_oatemp_hour_end": "14:30", 
+        "peak_oatemp_zone_sp_shift": "3.0",   
         "building_topic": "slipstream_internal/slipstream_hq",
-        "jci_occ_topic": "OCC-SCHEDULE",
-        "trane_occ_topic": "Occupancy Request",
         "jci_zonetemp_topic": "ZN-T",
         "trane_zonetemp_topic": "Space Temperature Local",
         "jci_zonetemp_setpoint_topic": "ZN-SP",
         "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
-        "znt_setpoint_threshold_degf": "72",
-        "vav_groups_to_override": "2",
-        "vav_groups_total": "4"
+        "znt_scoring_setpoint": "72",
+        "vav_groups_to_override": "1"
         }
 
-        revertpoint_default = float(self.default_config["revertpoint_default"])
-        unnoccupied_value = float(self.default_config["unnoccupied_value"])
+
+        load_shifting_cycle_time_seconds = int(self.default_config["load_shifting_cycle_time_seconds"])
+        preocc_zone_sp_shift = float(self.default_config["preocc_zone_sp_shift"])
+        pre_cool_hour_start = str(self.default_config["pre_cool_hour_start"])
+        pre_cool_hour_end = str(self.default_config["pre_cool_hour_end"])            
+        peak_oatemp_hour_start = str(self.default_config["peak_oatemp_hour_start"])
+        peak_oatemp_hour_end = str(self.default_config["peak_oatemp_hour_end"])
+        peak_oatemp_zone_sp_shift = float(self.default_config["peak_oatemp_zone_sp_shift"])
         building_topic = str(self.default_config["building_topic"])
-        jci_occ_topic = str(self.default_config["jci_occ_topic"])            
-        trane_occ_topic = str(self.default_config["trane_occ_topic"])
         jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
         trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
         jci_zonetemp_setpoint_topic = str(self.default_config["jci_zonetemp_setpoint_topic"])
         trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
-        znt_setpoint_threshold_degf = float(self.default_config["znt_setpoint_threshold_degf"])
+        znt_scoring_setpoint = int(self.default_config["znt_scoring_setpoint"])
         vav_groups_to_override = int(self.default_config["vav_groups_to_override"])
-        vav_groups_total = int(self.default_config["vav_groups_total"])
 
 
-        self.revertpoint_default = revertpoint_default
-        self.unnoccupied_value = unnoccupied_value
-        self.building_topic  = building_topic
-        self.jci_occ_topic = jci_occ_topic
-        self.trane_occ_topic = trane_occ_topic
+        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
+        self.preocc_zone_sp_shift = preocc_zone_sp_shift
+        self.pre_cool_hour_start = pre_cool_hour_start
+        self.pre_cool_hour_end = pre_cool_hour_end       
+        self.peak_oatemp_hour_start = peak_oatemp_hour_start
+        self.peak_oatemp_hour_end = peak_oatemp_hour_end
+        self.peak_oatemp_zone_sp_shift = peak_oatemp_zone_sp_shift
+        self.building_topic = building_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
-        self.znt_setpoint_threshold_degf = znt_setpoint_threshold_degf
+        self.znt_scoring_setpoint = znt_scoring_setpoint
         self.vav_groups_to_override = vav_groups_to_override
-        self.vav_groups_total = vav_groups_total
 
         _log.debug(f'*** [Roller Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
@@ -169,18 +177,22 @@ class Roller(Agent):
         _log.debug("*** [Roller Agent INFO] *** - ATTEMPTING CONFIG FILE LOAD!")
 
         try:
-            revertpoint_default = float(config["revertpoint_default"])
-            unnoccupied_value = float(config["unnoccupied_value"])
+
+            load_shifting_cycle_time_seconds = int(config["load_shifting_cycle_time_seconds"])
+            preocc_zone_sp_shift = float(config["preocc_zone_sp_shift"])
+            pre_cool_hour_start = str(config["pre_cool_hour_start"])
+            pre_cool_hour_end = str(config["pre_cool_hour_end"])            
+            peak_oatemp_hour_start = str(config["peak_oatemp_hour_start"])
+            peak_oatemp_hour_end = str(config["peak_oatemp_hour_end"])
+            peak_oatemp_zone_sp_shift = float(config["peak_oatemp_zone_sp_shift"])
             building_topic = str(config["building_topic"])
-            jci_occ_topic = str(config["jci_occ_topic"])            
-            trane_occ_topic = str(config["trane_occ_topic"])
             jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
             trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
             jci_zonetemp_setpoint_topic = str(config["jci_zonetemp_setpoint_topic"])
             trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
-            znt_setpoint_threshold_degf = float(config["znt_setpoint_threshold_degf"])
+            znt_scoring_setpoint = int(config["znt_scoring_setpoint"])
             vav_groups_to_override = int(config["vav_groups_to_override"])
-            vav_groups_total = int(config["vav_groups_total"])
+
 
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
@@ -189,18 +201,20 @@ class Roller(Agent):
 
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIG FILE LOAD SUCCESS!')
 
-        self.revertpoint_default = revertpoint_default
-        self.unnoccupied_value = unnoccupied_value
-        self.building_topic  = building_topic
-        self.jci_occ_topic = jci_occ_topic
-        self.trane_occ_topic = trane_occ_topic
+        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
+        self.preocc_zone_sp_shift = preocc_zone_sp_shift
+        self.pre_cool_hour_start = pre_cool_hour_start
+        self.pre_cool_hour_end = pre_cool_hour_end       
+        self.peak_oatemp_hour_start = peak_oatemp_hour_start
+        self.peak_oatemp_hour_end = peak_oatemp_hour_end
+        self.peak_oatemp_zone_sp_shift = peak_oatemp_zone_sp_shift
+        self.building_topic = building_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
-        self.znt_setpoint_threshold_degf = znt_setpoint_threshold_degf
+        self.znt_scoring_setpoint = znt_scoring_setpoint
         self.vav_groups_to_override = vav_groups_to_override
-        self.vav_groups_total = vav_groups_total
 
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIGS SET SUCCESS!')
 
@@ -244,7 +258,6 @@ class Roller(Agent):
             #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
 
 
-
     @Core.receiver("onstart")
     def onstart(self, sender, **kwargs):
         """
@@ -257,7 +270,7 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(300, self.dr_event_activate)
+        self.core.periodic(1200, self.dr_event_activate)
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
@@ -298,6 +311,7 @@ class Roller(Agent):
             #_log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
 
 
+    # this method calculates the group to shed based on min shed_count's & zone temp avg offsets score
     def get_shed_group(self):
         min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
@@ -313,7 +327,7 @@ class Roller(Agent):
         return sorted_list
 
 
-    def schedule_for_actuator(self,group):
+    def schedule_for_actuator(self,groups):
         # create start and end timestamps
         _now = get_aware_utc_now()
         str_start = format_timestamp(_now)
@@ -321,127 +335,146 @@ class Roller(Agent):
         str_end = format_timestamp(_end)
         schedule_request = []
         # wrap the topic and timestamps up in a list and add it to the schedules list
-        for key,value in self.nested_group_map[group].items():
-            if key not in ('score','shed_count'):
-                topic_sched_group_l1n = '/'.join([self.building_topic, str(value)])
-                schedule_request.append([topic_sched_group_l1n, str_start, str_end])
+        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR DEBUG GROUP IS {groups}')
+        for group in groups:
+            for key,value in self.nested_group_map[group].items():
+                if key not in ('score','shed_count'):
+                    topic_sched_group_l1n = '/'.join([self.building_topic, str(value)])
+                    schedule_request.append([topic_sched_group_l1n, str_start, str_end])
         # send the request to the actuator
         result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
         _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR SCHEDULE EVENT SUCESS {result}')
         
 
-    def rpc_get_mult_temps(self,group):
-        get_zone_temps_final = []
+    # get multiple data rpc call to retrieve all zone temp setpoints
+    # also calls the schedule_for_actuator method automatically
+    def rpc_get_mult_setpoints(self,groups):
+        get_zone_setpoints_final = []
+        schedule_request = self.schedule_for_actuator(groups)
+        _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
         # call schedule actuator agent from different method
-        schedule_request = self.schedule_for_actuator(group)
-        for key,value in self.nested_group_map[group].items():
-            if key not in ('score','shed_count'):
-                topic_group_ = '/'.join([self.building_topic, str(value)])
-                _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps topic_group_ is {topic_group_}')
-                if int(value) > 10000: # its a trane controller
-                    get_zone_temps = '/'.join([topic_group_, self.trane_zonetemp_topic])
-                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps Trane get_zone_temps is {get_zone_temps}')
-                else:
-                    get_zone_temps = '/'.join([topic_group_, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps JCI get_zone_temps is {get_zone_temps}')
-                get_zone_temps_final.append(get_zone_temps) # GET MULTIPLE Zone Temp for this group
-        return get_zone_temps_final
+        for group in groups:
+            _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG GROUP IS {group}')
+            for key,value in self.nested_group_map[group].items():
+                if key not in ('score','shed_count'):
+                    topic_group_ = '/'.join([self.building_topic, str(value)])
+                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints topic_group_ is {topic_group_}')
+                    if int(value) > 10000: # its a trane controller
+                        get_zone_setpoints = '/'.join([topic_group_, self.trane_zonetemp_setpoint_topic])
+                        _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints Trane get_zone_setpoints is {get_zone_setpoints}')
+                    else:
+                        get_zone_setpoints = '/'.join([topic_group_, self.jci_zonetemp_setpoint_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
+                        _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints JCI get_zone_setpoints is {get_zone_setpoints}')
+                    get_zone_setpoints_final.append(get_zone_setpoints) # GET MULTIPLE Zone Temp for this group
+        return get_zone_setpoints_final
 
 
-    def rpc_set_mult_zones_unoccupied(self,group):
-        get_zone_temps_final = []
-        for key,value in self.nested_group_map[group].items():
-            if key not in ('score','shed_count'):
-                topic_group_ = '/'.join([self.building_topic, str(value)])
-                _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps topic_group_ is {topic_group_}')
-                if int(value) > 10000: # its a trane controller
-                    get_zone_temps = '/'.join([topic_group_, self.trane_zonetemp_topic])
-                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps Trane get_zone_temps is {get_zone_temps}')
-                else:
-                    get_zone_temps = '/'.join([topic_group_, self.jci_zonetemp_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_temps JCI get_zone_temps is {get_zone_temps}')
-                get_zone_temps_final.append(get_zone_temps) # GET MULTIPLE Zone Temp for this group
-        return get_zone_temps_final
+    # boolean method to determine if zone is in target zone
+    def find_zone(self,device,group_str):
+        #print(f"TRYING TO LOOK FOR A MATCH ON DEVICE {device} TO A ZONE {group_str}")       
+        for group in nested_group_map:
+            for zones, bacnet_id in nested_group_map[group].items():
+                if zones not in ('score', 'shed_count'):
+                    if int(bacnet_id) == int(device):
+                        if group == group_str:
+                            #print(f"{zones}:{bacnet_id}")
+                            #print(f"found in {group}")
+                            return True
+        return False
 
 
+    # method used to split the RPC call data so we can calculate
+    # new zone temperature setpoints on the targeted zone
+    def rpc_data_splitter(self,target_group):
+        zones_to_adjust = []
+        zones_to_release = []
+        for device,setpoint in all_data[0].items():
+            device_id = device.split('/')[2]
+            find_zone(device_id,target_group)
+            if find_zone(device_id,target_group):
+                zones_to_adjust.append(device)
+            else:
+                zones_to_release.append(device)
+        return zones_to_adjust,zones_to_release
+
+
+    # method used to calculate new zone temp setpoints
+    def get_adjust_zone_setpoints(rpc_data,group,znt_offset):
+        new_setpoints = []
+        old_setpoints = []
+        for key,setpoint in rpc_data[0].items():
+            for zone in group:
+                if zone == key:
+                    setpoint_new = setpoint + znt_offset
+                    new_setpoints.append(setpoint_new)
+                    old_setpoints.append(setpoint)
+        return new_setpoints,old_setpoints
+
+
+    # this is the method called on an interval when demand response is True
     def dr_event_activate(self):
         _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
 
         # Use the Zone Temp Data to Score the Groups
         # Pick the Zone to Shed
         self.score_groups()
-        shed_this_zone = self.get_shed_group()
-        _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')        
+        shed_zones = self.get_shed_group()
+        shed_this_zone = shed_zones[0]
+        _log.debug(f'*** [Roller Agent INFO] *** -  SHED ZONES: {shed_zones}')        
+        _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')   
+
+
+        zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
+        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+        _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+
 
 
         '''
-        zones = self.rpc_get_mult_temps(shed_this_zone)
-
-        get_zones_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zones).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  get_zones_data values is {get_zones_data}')
-
-
-
         # send the request to the actuator
         result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
         _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
-
-
         for device in self.jci_device_map.values():
             topic_jci = '/'.join([self.building_topic, device])
             final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
-
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
-
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
             get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
-
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
-
-
         for device in self.trane_device_map.values():
             topic_trane = '/'.join([self.building_topic, device])
             final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
-
             # BACnet enum point for VAV occ
             # 1 == occ, 2 == unnoc
-
             # create a (topic, value) tuple and add it to our topic values
             set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
             revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
             get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
-
         # now we can send our set_multiple_points request, use the basic form with our additional params
         _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
-
-
-
         result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
         _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
-
-
-
         
         result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
         _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
         '''
 
+        '''
         # Move this code to end after RPC call to UNOC the Zones
         # Add a 1 to the zone that was shed for memory on algorithm calculation
         zone_to_add_count = self.get_shed_group()[0]
         self.nested_group_map[zone_to_add_count]['shed_count'] = self.nested_group_map[zone_to_add_count]['shed_count'] + 1
         _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS {self.nested_group_map}')
-
+        '''
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
         """
         RPC method
-
         May be called from another agent via self.core.rpc.call
         """
         pass
@@ -466,5 +499,3 @@ if __name__ == '__main__':
         sys.exit(main())
     except KeyboardInterrupt:
         pass
-
-
