@@ -111,7 +111,7 @@ class Roller(Agent):
         self.load_shed_cycling_complete = False
         self.load_shed_cycling_started = False
         self.load_shed_cycling_stoped = False
-        self.load_shed_cycles = 1
+        self.load_shed_cycles = 10
 
         self.nested_group_map = {
             'group_l1n' : {
@@ -275,8 +275,8 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(120, self.dr_event_activate)
-        #_log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
+        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_event_activate)
+        _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
     def create_topics_from_map(self,device_map):
@@ -459,7 +459,7 @@ class Roller(Agent):
 
         # cycled through all zones per self.load_shed_cycles
         if complete:
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker_complete COMPLETED! DEBUGG')
+            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
 
             # Use the Zone Temp Data to Score the Groups
             # Pick the Zone to Shed
@@ -482,7 +482,7 @@ class Roller(Agent):
             # Move this code to end after RPC call to UNOC the Zones
             # Add a 1 to the zone that was shed for memory on algorithm calculation
             self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] - 1
-            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {shed_this_zone}')
             _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
 
 
