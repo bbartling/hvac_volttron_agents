@@ -108,6 +108,11 @@ class Roller(Agent):
         self.agent_id = "electric_load_roller_agent"
         self.url = "http://10.200.200.224:5000/event-state/charmany"
 
+        self.load_shed_cycling_complete = False
+        self.load_shed_cycling_started = False
+        self.load_shed_cycling_stoped = False
+        self.load_shed_cycles = 1
+
         self.nested_group_map = {
             'group_l1n' : {
             'score': 0,
@@ -270,8 +275,8 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(1200, self.dr_event_activate)
-        _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
+        self.core.periodic(120, self.dr_event_activate)
+        #_log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALLED SUCCESS!')
 
 
     def create_topics_from_map(self,device_map):
@@ -292,7 +297,7 @@ class Roller(Agent):
             # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! value is {value}')
             if key not in ('score','shed_count'):
                 temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
-        _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
+        #_log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
         return temps
 
 
@@ -306,12 +311,12 @@ class Roller(Agent):
             if empty_list_checker:
                 _log.debug(f'*** [Roller Agent INFO] *** - score_groups NoneType Found!')
             else:
-                self.nested_group_map[key]['score'] = self.znt_setpoint_threshold_degf - sum(group_temps)/len(group_temps)
+                self.nested_group_map[key]['score'] = self.znt_scoring_setpoint - sum(group_temps)/len(group_temps)
                 _log.debug(f'*** [Roller Agent INFO] *** - score_groups SUCCESS!')
-            #_log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
+            _log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
 
 
-    # this method calculates the group to shed based on min shed_count's & zone temp avg offsets score
+    # this shed START method calculates the group to shed based on min shed_count's & zone temp avg offsets score
     def get_shed_group(self):
         min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
@@ -321,9 +326,30 @@ class Roller(Agent):
         add in some extra logic to call same group more than once is score is ideal
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1])
-        #_log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group is {sorted_groups}')
-        sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
-        #_log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group sorted_groups is {sorted_groups}')
+
+        #sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
+        sorted_list = [sorted_group[0] for sorted_group in sorted_groups]
+        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
+        return sorted_list
+
+
+    # this method STOP (de-shed) note: sorted reverse=True 
+    # calculates the group to shed based on min shed_count's & zone temp avg offsets score
+    def get_de_shed_group(self):
+        min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
+        avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
+        '''
+        avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count and group['score'] > -1]
+        
+        add in some extra logic to call same group more than once is score is ideal
+        '''
+        sorted_groups = sorted(avail_groups,key = lambda x: x[1], reverse=True)
+        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group sorted_groups is {sorted_groups}')
+
+        #sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
+        sorted_list = [sorted_group[0] for sorted_group in sorted_groups]
+        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
         return sorted_list
 
 
@@ -351,29 +377,30 @@ class Roller(Agent):
     def rpc_get_mult_setpoints(self,groups):
         get_zone_setpoints_final = []
         schedule_request = self.schedule_for_actuator(groups)
-        _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
+        #_log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
         # call schedule actuator agent from different method
         for group in groups:
             _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG GROUP IS {group}')
             for key,value in self.nested_group_map[group].items():
                 if key not in ('score','shed_count'):
                     topic_group_ = '/'.join([self.building_topic, str(value)])
-                    _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints topic_group_ is {topic_group_}')
+                    #_log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints topic_group_ is {topic_group_}')
                     if int(value) > 10000: # its a trane controller
                         get_zone_setpoints = '/'.join([topic_group_, self.trane_zonetemp_setpoint_topic])
-                        _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints Trane get_zone_setpoints is {get_zone_setpoints}')
+                        #_log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints Trane get_zone_setpoints is {get_zone_setpoints}')
                     else:
                         get_zone_setpoints = '/'.join([topic_group_, self.jci_zonetemp_setpoint_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
-                        _log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints JCI get_zone_setpoints is {get_zone_setpoints}')
+                        #_log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints JCI get_zone_setpoints is {get_zone_setpoints}')
                     get_zone_setpoints_final.append(get_zone_setpoints) # GET MULTIPLE Zone Temp for this group
         return get_zone_setpoints_final
 
 
     # boolean method to determine if zone is in target zone
+    # called from the rpc_data_splitter method
     def find_zone(self,device,group_str):
         #print(f"TRYING TO LOOK FOR A MATCH ON DEVICE {device} TO A ZONE {group_str}")       
-        for group in nested_group_map:
-            for zones, bacnet_id in nested_group_map[group].items():
+        for group in self.nested_group_map:
+            for zones, bacnet_id in self.nested_group_map[group].items():
                 if zones not in ('score', 'shed_count'):
                     if int(bacnet_id) == int(device):
                         if group == group_str:
@@ -385,13 +412,13 @@ class Roller(Agent):
 
     # method used to split the RPC call data so we can calculate
     # new zone temperature setpoints on the targeted zone
-    def rpc_data_splitter(self,target_group):
+    def rpc_data_splitter(self,target_group,rpc_data):
         zones_to_adjust = []
         zones_to_release = []
-        for device,setpoint in all_data[0].items():
+        for device,setpoint in rpc_data[0].items():
             device_id = device.split('/')[2]
-            find_zone(device_id,target_group)
-            if find_zone(device_id,target_group):
+            self.find_zone(device_id,target_group)
+            if self.find_zone(device_id,target_group):
                 zones_to_adjust.append(device)
             else:
                 zones_to_release.append(device)
@@ -408,12 +435,56 @@ class Roller(Agent):
                     setpoint_new = setpoint + znt_offset
                     new_setpoints.append(setpoint_new)
                     old_setpoints.append(setpoint)
-        return new_setpoints,old_setpoints
+        return new_setpoints,old_setpoints2
+
+
+    def cycle_checker_complete(self,cycles):
+        check_sum = []
+        check_sum.append(cycles)
+        for group in self.nested_group_map:
+            for k,v in self.nested_group_map[group].items():
+                if k in ('shed_count'):
+                    check_sum.append(v)
+        return np.all(check_sum)
 
 
     # this is the method called on an interval when demand response is True
+    # NOTES: ONLY DIFFERENCE IS DESHED AND SHED METHODS if complete
     def dr_event_activate(self):
         _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
+
+        complete = self.cycle_checker_complete(self.load_shed_cycles)
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker_complete complete is {complete}')
+
+
+        # cycled through all zones per self.load_shed_cycles
+        if complete:
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker_complete COMPLETED! DEBUGG')
+
+            # Use the Zone Temp Data to Score the Groups
+            # Pick the Zone to Shed
+            self.score_groups()
+            shed_zones = self.get_de_shed_group()
+            shed_this_zone = shed_zones[0]
+            _log.debug(f'*** [Roller Agent INFO] *** -  SHED ZONES: {shed_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')   
+
+
+            zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
+            zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+
+            adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
+            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+
+
+            # Move this code to end after RPC call to UNOC the Zones
+            # Add a 1 to the zone that was shed for memory on algorithm calculation
+            self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] - 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+
 
         # Use the Zone Temp Data to Score the Groups
         # Pick the Zone to Shed
@@ -427,6 +498,17 @@ class Roller(Agent):
         zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
         zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
         _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+
+        adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
+        _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+
+
+        # Move this code to end after RPC call to UNOC the Zones
+        # Add a 1 to the zone that was shed for memory on algorithm calculation
+        self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
+        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
 
 
 
@@ -461,14 +543,6 @@ class Roller(Agent):
         
         result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
         _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
-        '''
-
-        '''
-        # Move this code to end after RPC call to UNOC the Zones
-        # Add a 1 to the zone that was shed for memory on algorithm calculation
-        zone_to_add_count = self.get_shed_group()[0]
-        self.nested_group_map[zone_to_add_count]['shed_count'] = self.nested_group_map[zone_to_add_count]['shed_count'] + 1
-        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS {self.nested_group_map}')
         '''
 
     @RPC.export
