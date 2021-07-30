@@ -109,8 +109,8 @@ class Roller(Agent):
         self.url = "http://10.200.200.224:5000/event-state/charmany"
 
         self.load_shed_cycling_complete = False
-        self.load_shed_cycling_started = False
-        self.load_shed_cycling_stoped = False
+        self.load_shed_topped = False
+        self.load_shed_bottomed = False
         self.load_shed_cycles = 10
 
         self.nested_group_map = {
@@ -438,7 +438,7 @@ class Roller(Agent):
         return new_setpoints,old_setpoints2
 
 
-    def cycle_checker_complete(self,cycles):
+    def cycle_checker(self,cycles):
         check_sum = []
         check_sum.append(cycles)
         for group in self.nested_group_map:
@@ -449,16 +449,26 @@ class Roller(Agent):
 
 
     # this is the method called on an interval when demand response is True
-    # NOTES: ONLY DIFFERENCE IS DESHED AND SHED METHODS if complete
+    # NOTES: ONLY DIFFERENCE IS DE-SHED AND SHED METHODS if top_reached of load_shed_cycles
     def dr_event_activate(self):
         _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
 
-        complete = self.cycle_checker_complete(self.load_shed_cycles)
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker_complete complete is {complete}')
+        top_reached = self.cycle_checker(self.load_shed_cycles)
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
+        if top_reached:
+            self.load_shed_topped = True
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_topped = True !')
 
 
-        # cycled through all zones per self.load_shed_cycles
-        if complete:
+        bottom_reached = self.cycle_checker(0)
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
+        if bottom_reached:
+            self.load_shed_topped = False
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_bottomed = True !')    
+
+
+        # if TRUE start counting down
+        if self.load_shed_topped == True:
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
 
             # Use the Zone Temp Data to Score the Groups
