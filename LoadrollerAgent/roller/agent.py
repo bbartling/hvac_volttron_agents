@@ -55,7 +55,7 @@ class Roller(Agent):
 
 
         self.default_config = {
-        "load_shifting_cycle_time_seconds": "1800",
+        "load_shifting_cycle_time_seconds": "60",
         "preocc_zone_sp_shift": "-3.0",
         "pre_cool_hour_start": "05:00", 
         "pre_cool_hour_end": "08:00",
@@ -108,10 +108,12 @@ class Roller(Agent):
         self.agent_id = "electric_load_roller_agent"
         self.url = "http://10.200.200.224:5000/event-state/charmany"
 
-        self.load_shed_cycling_complete = False
+        self.ahu_occ_status = 2
+        self.ahu_morning_mode_go = False
+        self.ahu_afternoon_mode_go = False
         self.load_shed_topped = False
         self.load_shed_bottomed = False
-        self.load_shed_cycles = 10
+        self.load_shed_cycles = 2
 
         self.nested_group_map = {
             'group_l1n' : {
@@ -254,6 +256,14 @@ class Roller(Agent):
         _log.debug(f"*** [Handle Pub Sub INFO] *** topic_formatted {topic}")
 
         for point,sensor_reading in message[0].items():
+
+            # CHECK AHU OCC STATUS
+            if point == 'Occupancy Request':
+                _log.debug(f"*** [Handle Pub Sub INFO] *** Found AHU Occ Req point is {point} value of {sensor_reading}")
+                self.ahu_occ_status = sensor_reading
+                _log.debug(f"*** [Handle Pub Sub INFO] *** self.ahu_occ_status is set to {self.ahu_occ_status}")
+
+            # GET ZONE TEMP DATA
             if point == 'ZN-T' or point == 'Space Temperature Local':
                 _log.debug(f"*** [Handle Pub Sub INFO] *** Found a Zone Temp Published {point} that is {sensor_reading}")
                 if point == 'Space Temperature Local': # Fix Trane controller data that comes through in Metric
@@ -261,22 +271,6 @@ class Roller(Agent):
 
             self.znt_values[topic] = float(sensor_reading)
             #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
-
-
-    @Core.receiver("onstart")
-    def onstart(self, sender, **kwargs):
-        """
-        This is method is called once the Agent has successfully connected to the platform.
-        This is a good place to setup subscriptions if they are not dynamic or
-        do any other startup activities that require a connection to the message bus.
-        Called after any configurations methods that are called at startup.
-        Usually not needed if using the configuration store.
-        """
-        _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
-        #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
-        self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_event_activate)
-        _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
     def create_topics_from_map(self,device_map):
@@ -439,13 +433,30 @@ class Roller(Agent):
 
 
     def cycle_checker(self,cycles):
-        check_sum = []
-        check_sum.append(cycles)
+        check_sum = [int(cycles)]
         for group in self.nested_group_map:
             for k,v in self.nested_group_map[group].items():
                 if k in ('shed_count'):
-                    check_sum.append(v)
-        return np.all(check_sum)
+                    check_sum.append(int(v))
+        _log.debug(f'*** [Roller Agent INFO] *** -  cycle_checker appended is {check_sum}')
+        # returns boolean
+        return sum(check_sum) == len(check_sum) * cycles
+
+
+    @Core.receiver("onstart")
+    def onstart(self, sender, **kwargs):
+        """
+        This is method is called once the Agent has successfully connected to the platform.
+        This is a good place to setup subscriptions if they are not dynamic or
+        do any other startup activities that require a connection to the message bus.
+        Called after any configurations methods that are called at startup.
+        Usually not needed if using the configuration store.
+        """
+        _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
+        #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
+        self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
+        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_event_activate)
+        _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
     # this is the method called on an interval when demand response is True
@@ -457,18 +468,42 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
         if top_reached:
             self.load_shed_topped = True
+            self.load_shed_bottomed = False
             _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_topped = True !')
 
 
         bottom_reached = self.cycle_checker(0)
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker bottom_reached is {top_reached}')
         if bottom_reached:
             self.load_shed_topped = False
+            self.load_shed_bottomed = True
             _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_bottomed = True !')    
 
 
+        '''
+        if self.ahu_occ_status == 2 and self.ahu_morning_mode_go == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
+            self.ahu_morning_mode_go == True
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL MORNING MODE SEQUENCES')
+            _log.debug(f'*** [Roller Agent INFO] *** -  DRIVE DOWN ALL ZONE TEMP SETPOINTS -3')
+            _log.debug(f'*** [Roller Agent INFO] *** -  FIRST OCCUPY THE AHU & CORRECT ZONE OCC VALS OF 1')
+            _log.debug(f'*** [Roller Agent INFO] *** -  BACnet SET ALL OTHER ZONES TO UNNOC VALUES OF 2')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE OCCs TO BAS')
+
+        if self.ahu_occ_status == 1 and self.ahu_afternoon_mode_go == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
+            self.ahu_afternoon_mode_go == True
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL AFTERNOON MODE SEQUENCES')
+            _log.debug(f'*** [Roller Agent INFO] *** -  SET CORRECT ZONE-SP +3, OTHERS NONE')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
+        '''
+
+
         # if TRUE start counting down
-        if self.load_shed_topped == True:
+        if self.load_shed_topped == True and self.load_shed_bottomed == False:
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
 
             # Use the Zone Temp Data to Score the Groups
@@ -476,10 +511,38 @@ class Roller(Agent):
             self.score_groups()
             shed_zones = self.get_de_shed_group()
             shed_this_zone = shed_zones[0]
-            _log.debug(f'*** [Roller Agent INFO] *** -  SHED ZONES: {shed_zones}')        
-            _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')   
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN SHED ZONES: {shed_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN SHED THIS ZONE: {shed_this_zone}')   
+
+            '''
+            zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
+            zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
 
 
+            adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
+            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+            '''
+
+            # Move this code to end after RPC call to UNOC the Zones
+            # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
+            self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] - 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {shed_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+
+
+        else:
+            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT UP NOW on shed_count')
+            # Use the Zone Temp Data to Score the Groups
+            # Pick the Zone to Shed
+            self.score_groups()
+            shed_zones = self.get_shed_group()
+            shed_this_zone = shed_zones[0]
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED ZONES: {shed_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED THIS ZONE: {shed_this_zone}')   
+
+            '''
             zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
             _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
@@ -487,73 +550,48 @@ class Roller(Agent):
             adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
             _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
             _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-
+            '''
 
             # Move this code to end after RPC call to UNOC the Zones
-            # Add a 1 to the zone that was shed for memory on algorithm calculation
-            self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] - 1
-            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {shed_this_zone}')
+            # ADD a 1 to the zone that was shed for memory on algorithm calculation
+            self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
             _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
 
 
-        # Use the Zone Temp Data to Score the Groups
-        # Pick the Zone to Shed
-        self.score_groups()
-        shed_zones = self.get_shed_group()
-        shed_this_zone = shed_zones[0]
-        _log.debug(f'*** [Roller Agent INFO] *** -  SHED ZONES: {shed_zones}')        
-        _log.debug(f'*** [Roller Agent INFO] *** -  SHED THIS ZONE: {shed_this_zone}')   
 
-
-        zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
-        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
-
-        adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-        _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
-        _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-
-
-        # Move this code to end after RPC call to UNOC the Zones
-        # Add a 1 to the zone that was shed for memory on algorithm calculation
-        self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
-        _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
-
-
-
-        '''
-        # send the request to the actuator
-        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
-        _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
-        for device in self.jci_device_map.values():
-            topic_jci = '/'.join([self.building_topic, device])
-            final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
-            # BACnet enum point for VAV occ
-            # 1 == occ, 2 == unnoc
-            # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
-            revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
-            get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
-        # now we can send our set_multiple_points request, use the basic form with our additional params
-        _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
-        for device in self.trane_device_map.values():
-            topic_trane = '/'.join([self.building_topic, device])
-            final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
-            # BACnet enum point for VAV occ
-            # 1 == occ, 2 == unnoc
-            # create a (topic, value) tuple and add it to our topic values
-            set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
-            revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
-            get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
-        # now we can send our set_multiple_points request, use the basic form with our additional params
-        _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
-        result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
-        
-        result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
-        _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
-        '''
+            '''
+            # send the request to the actuator
+            result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
+            _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
+            for device in self.jci_device_map.values():
+                topic_jci = '/'.join([self.building_topic, device])
+                final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
+                # BACnet enum point for VAV occ
+                # 1 == occ, 2 == unnoc
+                # create a (topic, value) tuple and add it to our topic values
+                set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
+                revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
+                get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
+            # now we can send our set_multiple_points request, use the basic form with our additional params
+            _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
+            for device in self.trane_device_map.values():
+                topic_trane = '/'.join([self.building_topic, device])
+                final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
+                # BACnet enum point for VAV occ
+                # 1 == occ, 2 == unnoc
+                # create a (topic, value) tuple and add it to our topic values
+                set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
+                revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
+                get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
+            # now we can send our set_multiple_points request, use the basic form with our additional params
+            _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
+            result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
+            _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
+            
+            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
+            _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
+            '''
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
