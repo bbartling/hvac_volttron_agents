@@ -113,7 +113,7 @@ class Roller(Agent):
         self.ahu_afternoon_mode_go = False
         self.load_shed_topped = False
         self.load_shed_bottomed = False
-        self.load_shed_cycles = 5
+        self.load_shed_cycles = 2
         self.set_shed_counts_to_one = False
 
         self.nested_group_map = {
@@ -331,8 +331,8 @@ class Roller(Agent):
 
     # this method STOP (de-shed) note: sorted reverse=True 
     # calculates the group to shed based on min shed_count's & zone temp avg offsets score
-    def get_de_shed_group(self):
-        min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
+    def get_release_group(self):
+        min_shed_count = max([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
         '''
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count and group['score'] > -1]
@@ -444,14 +444,6 @@ class Roller(Agent):
         return sum(check_sum) == len(check_sum) * cycles
 
 
-    def set_shed_counts_to_one(self):
-        for group in self.nested_group_map:
-            group_map = self.nested_group_map[group]
-            for k, v in group_map.items():
-                if k in ('shed_count'):
-                    group_map[k] = 1
-        _log.debug(f'*** [Roller Agent INFO] *** -  set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
-
 
     @Core.receiver("onstart")
     def onstart(self, sender, **kwargs):
@@ -465,14 +457,15 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_event_activate)
+        self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
         _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
     # this is the method called on an interval when demand response is True
     # NOTES: ONLY DIFFERENCE IS DE-SHED AND SHED METHODS if top_reached of load_shed_cycles
-    def dr_event_activate(self):
-        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING dr_event_activate FUNCTION!')
+    def afternoon_mode_go_activate(self):
+        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING afternoon_mode_go_activate FUNCTION!')
+        _log.debug(f'*** [Roller Agent INFO] *** -  self.ahu_afternoon_mode_go is {self.ahu_afternoon_mode_go}')
 
         top_reached = self.cycle_checker(self.load_shed_cycles)
         _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
@@ -481,14 +474,111 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_topped = True !')
 
 
-        bottom_reached = self.cycle_checker(0)
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker bottom_reached is {bottom_reached}')
-        if bottom_reached:
-            self.load_shed_bottomed = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_bottomed = True !')    
+        if self.ahu_afternoon_mode_go == True:
+            bottom_reached = self.cycle_checker(0)
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker bottom_reached is {bottom_reached}')
+            if bottom_reached:
+                self.load_shed_bottomed = True
+                _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_bottomed = True !')
 
+        self.ahu_afternoon_mode_go = True
 
         '''
+        NOTES
+        if self.ahu_occ_status == 1 and self.ahu_afternoon_mode_go == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
+            self.ahu_afternoon_mode_go = True
+            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL AFTERNOON MODE SEQUENCES')
+            _log.debug(f'*** [Roller Agent INFO] *** -  SET CORRECT ZONE-SP +3, OTHERS NONE')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
+            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
+            self.ahu_afternoon_mode_go = False
+        '''
+
+        if self.load_shed_topped == False and self.load_shed_bottomed == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT UP NOW on shed_count')
+            
+
+            # Use the Zone Temp Data to Score the Groups
+            # Pick the Zone to Shed
+            self.score_groups()
+            shed_zones = self.get_shed_group()
+            shed_this_zone = shed_zones[0]
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED ZONES: {shed_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED THIS ZONE: {shed_this_zone}')   
+
+            '''
+            zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
+            zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+
+            adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
+            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+            '''
+
+            # Move this code to end after RPC call to UNOC the Zones
+            # ADD a 1 to the zone that was shed for memory on algorithm calculation
+            self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+
+
+        elif self.load_shed_topped == True and self.load_shed_bottomed == False:
+            # if TRUE start counting down
+            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.set_shed_counts_to_one  is {self.set_shed_counts_to_one}')
+            
+
+            # If starting COUNT DOWN FOR FIRST TIME
+            if self.set_shed_counts_to_one == False:
+                _log.debug(f'*** [Roller Agent INFO] *** -  INIATING shed_counts to 1')
+                for group in self.nested_group_map:
+                    group_map = self.nested_group_map[group]
+                    for k, v in group_map.items():
+                        if k in ('shed_count'):
+                            group_map[k] = 1
+                _log.debug(f'*** [Roller Agent INFO] *** -  set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
+                self.set_shed_counts_to_one = True
+                _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG set_shed_counts_to_one = True SUCCESS')
+
+
+            # Use the Zone Temp Data to Score the Groups
+            # Pick the Zone to Shed
+            self.score_groups()
+            release_zones = self.get_release_group()
+            release_this_zone = release_zones[0]
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE ZONES: {release_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
+
+            '''
+            zone_setpoints = self.rpc_get_mult_setpoints(release_zones)
+            zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+
+
+            adjust_zones,release_zones = self.rpc_data_splitter(release_this_zone,zone_setpoints_data)
+            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+            '''
+
+            # Move this code to end after RPC call to UNOC the Zones
+            # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
+            self.nested_group_map[release_this_zone]['shed_count'] = self.nested_group_map[release_this_zone]['shed_count'] - 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {release_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+
+
+        else: 
+            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
+            self.ahu_afternoon_mode_go = False
+            _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL CHCKER FOR set_shed_counts_to_one  is {self.set_shed_counts_to_one}')
+
+
+
+    def morning_mode_go_activate(self):
+        '''
+        NOTES
         if self.ahu_occ_status == 2 and self.ahu_morning_mode_go == False:
             _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
             self.ahu_morning_mode_go = True
@@ -500,119 +590,7 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
             _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE OCCs TO BAS')
             self.ahu_morning_mode_go = False
-
-
-        if self.ahu_occ_status == 1 and self.ahu_afternoon_mode_go == False:
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
-            self.ahu_afternoon_mode_go = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL AFTERNOON MODE SEQUENCES')
-            _log.debug(f'*** [Roller Agent INFO] *** -  SET CORRECT ZONE-SP +3, OTHERS NONE')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
-            self.ahu_afternoon_mode_go = False
         '''
-
-        if self.load_shed_topped == True and self.load_shed_bottomed == True:
-            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
-
-        else:
-            # if TRUE start counting down
-            if self.load_shed_topped == True and self.load_shed_bottomed == False:
-                _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
-                _log.debug(f'*** [Roller Agent INFO] *** -  INIATING shed_counts to 1')
-
-                if self.set_shed_counts_to_one == False:
-                    self.set_shed_counts_to_one()
-                    self.set_shed_counts_to_one = True
-                    _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG set_shed_counts_to_one = True SUCCESS')
-
-
-                # Use the Zone Temp Data to Score the Groups
-                # Pick the Zone to Shed
-                self.score_groups()
-                shed_zones = self.get_de_shed_group()
-                shed_this_zone = shed_zones[0]
-                _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN SHED ZONES: {shed_zones}')        
-                _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN SHED THIS ZONE: {shed_this_zone}')   
-
-                '''
-                zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
-                zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-                _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
-
-
-                adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-                _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
-                _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-                '''
-
-                # Move this code to end after RPC call to UNOC the Zones
-                # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
-                self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] - 1
-                _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {shed_this_zone}')
-                _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
-
-
-            else:
-                _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT UP NOW on shed_count')
-                # Use the Zone Temp Data to Score the Groups
-                # Pick the Zone to Shed
-                self.score_groups()
-                shed_zones = self.get_shed_group()
-                shed_this_zone = shed_zones[0]
-                _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED ZONES: {shed_zones}')        
-                _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED THIS ZONE: {shed_this_zone}')   
-
-                '''
-                zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
-                zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-                _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
-
-                adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-                _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
-                _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-                '''
-
-                # Move this code to end after RPC call to UNOC the Zones
-                # ADD a 1 to the zone that was shed for memory on algorithm calculation
-                self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
-                _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
-                _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
-
-
-
-                '''
-                # send the request to the actuator
-                result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=30)
-                _log.debug(f'*** [Setter Agent INFO] *** -  ACTUATOR AGENT FOR ALL VAVs SCHEDULED SUCESS!')
-                for device in self.jci_device_map.values():
-                    topic_jci = '/'.join([self.building_topic, device])
-                    final_topic_jci = '/'.join([topic_jci, self.jci_setpoint_topic])
-                    # BACnet enum point for VAV occ
-                    # 1 == occ, 2 == unnoc
-                    # create a (topic, value) tuple and add it to our topic values
-                    set_multi_topic_values_master.append((final_topic_jci, self.unnoccupied_value)) # TO SET UNNOCUPIED
-                    revert_multi_topic_values_master.append((final_topic_jci, None)) # TO SET FOR REVERT
-                    get_multi_topic_values_master.append((final_topic_jci)) # GET MULTIPLE
-                # now we can send our set_multiple_points request, use the basic form with our additional params
-                _log.debug(f'*** [Setter Agent INFO] *** -  JCI DEVICES CALCULATED')
-                for device in self.trane_device_map.values():
-                    topic_trane = '/'.join([self.building_topic, device])
-                    final_topic_trane = '/'.join([topic_trane, self.trane_setpoint_topic])
-                    # BACnet enum point for VAV occ
-                    # 1 == occ, 2 == unnoc
-                    # create a (topic, value) tuple and add it to our topic values
-                    set_multi_topic_values_master.append((final_topic_trane, self.unnoccupied_value)) # TO SET UNNOCUPIED
-                    revert_multi_topic_values_master.append((final_topic_trane, None)) # TO SET FOR REVERT
-                    get_multi_topic_values_master.append((final_topic_trane)) # GET MULTIPLE
-                # now we can send our set_multiple_points request, use the basic form with our additional params
-                _log.debug(f'*** [Setter Agent INFO] *** -  TRANE DEVICES CALCULATED')
-                result = self.vip.rpc.call('platform.actuator', 'get_multiple_points', self.core.identity, get_multi_topic_values_master).get(timeout=20)
-                _log.debug(f'*** [Setter Agent INFO] *** -  get_multiple_points values {result}')
-                
-                result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_master).get(timeout=20)
-                _log.debug(f'*** [Setter Agent INFO] *** -  REVERT ON ALL VAVs WRITE SUCCESS!')
-                '''
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
