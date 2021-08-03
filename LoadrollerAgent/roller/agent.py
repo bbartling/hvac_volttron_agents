@@ -5,7 +5,7 @@ Agent documentation goes here.
 
 __docformat__ = 'reStructuredText'
 
-import logging, gevent, heapq, grequests, requests
+import logging, gevent, heapq, grequests, json
 import sys
 from datetime import timedelta as td, datetime as dt
 from volttron.platform.agent.utils import format_timestamp, get_aware_utc_now
@@ -55,7 +55,7 @@ class Roller(Agent):
 
 
         self.default_config = {
-        "load_shifting_cycle_time_seconds": "60",
+        "load_shifting_cycle_time_seconds": "1800",
         "preocc_zone_sp_shift": "-3.0",
         "pre_cool_hour_start": "05:00", 
         "pre_cool_hour_end": "08:00",
@@ -106,16 +106,29 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
         self.agent_id = "electric_load_roller_agent"
+
+        # FLASK APP work around to get fake demand response signal
         self.url = "http://10.200.200.224:5000/event-state/charmany"
 
+
+        # BACnet Occupied point value
+        # 1 equals occupied, 2 equals unnocupied
+        # if AHU is off (2) BACnet write to 1
+        # to make the AHU GO. Same for VAV boxes
         self.ahu_occ_status = 2
+
+
+        # metrics used to sift thru zones
+        # and calculate scores, etc.
+        self.load_shed_cycles = 5
         self.ahu_morning_mode_go = False
         self.ahu_afternoon_mode_go = False
         self.load_shed_topped = False
         self.load_shed_bottomed = False
-        self.load_shed_cycles = 2
         self.set_shed_counts_to_one = False
 
+
+        # BACnet devices/groups data structure
         self.nested_group_map = {
             'group_l1n' : {
             'score': 0,
@@ -507,7 +520,7 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED ZONES: {shed_zones}')        
             _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED THIS ZONE: {shed_this_zone}')   
 
-            '''
+
             zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
             _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
@@ -515,13 +528,27 @@ class Roller(Agent):
             adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
             _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
             _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-            '''
+
 
             # Move this code to end after RPC call to UNOC the Zones
             # ADD a 1 to the zone that was shed for memory on algorithm calculation
             self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
             _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
             _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+
+
+            payload = json.dumps(self.nested_group_map)
+            _log.debug(f'*** [Roller Agent INFO] *** -  payload DEBUGG is {payload}')
+
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
 
 
         elif self.load_shed_topped == True and self.load_shed_bottomed == False:
@@ -551,7 +578,7 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE ZONES: {release_zones}')        
             _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
 
-            '''
+
             zone_setpoints = self.rpc_get_mult_setpoints(release_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
             _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
@@ -560,7 +587,7 @@ class Roller(Agent):
             adjust_zones,release_zones = self.rpc_data_splitter(release_this_zone,zone_setpoints_data)
             _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
             _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
-            '''
+
 
             # Move this code to end after RPC call to UNOC the Zones
             # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
@@ -569,10 +596,27 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
 
 
+            payload = json.dumps(self.nested_group_map)
+            _log.debug(f'*** [Roller Agent INFO] *** -  payload DEBUGG is {payload}')
+
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
+
+
         else: 
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
             self.ahu_afternoon_mode_go = False
-            _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL CHCKER FOR set_shed_counts_to_one  is {self.set_shed_counts_to_one}')
+            self.set_shed_counts_to_one = False
+            self.load_shed_topped = False
+            self.load_shed_bottomed = False
+            _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
 
 
