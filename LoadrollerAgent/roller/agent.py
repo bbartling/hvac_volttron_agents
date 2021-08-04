@@ -55,7 +55,7 @@ class Roller(Agent):
 
 
         self.default_config = {
-        "load_shifting_cycle_time_seconds": "1800",
+        "load_shifting_cycle_time_seconds": "300",
         "preocc_zone_sp_shift": "-3.0",
         "pre_cool_hour_start": "05:00", 
         "pre_cool_hour_end": "08:00",
@@ -120,7 +120,7 @@ class Roller(Agent):
 
         # metrics used to sift thru zones
         # and calculate scores, etc.
-        self.load_shed_cycles = 5
+        self.load_shed_cycles = 1
         self.ahu_morning_mode_go = False
         self.ahu_afternoon_mode_go = False
         self.load_shed_topped = False
@@ -324,7 +324,7 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
 
 
-    # this shed START method calculates the group to shed based on min shed_count's & zone temp avg offsets score
+    # this method returns the group of zones to shed first, should be COLDEST ZONES of the group avg space temperatures
     def get_shed_group(self):
         min_shed_count = min([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
@@ -342,8 +342,7 @@ class Roller(Agent):
         return sorted_list
 
 
-    # this method STOP (de-shed) note: sorted reverse=True 
-    # calculates the group to shed based on min shed_count's & zone temp avg offsets score
+    # this method returns the group of zones to BACne release first, should be HOTTEST ZONES of the group avg space temperatures
     def get_release_group(self):
         min_shed_count = max([group['shed_count'] for _, group in self.nested_group_map.items()])
         avail_groups = [(group_name,group['score']) for group_name,group in self.nested_group_map.items() if group['shed_count'] == min_shed_count]
@@ -353,6 +352,7 @@ class Roller(Agent):
         add in some extra logic to call same group more than once is score is ideal
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1], reverse=True)
+        #sorted_groups = sorted(avail_groups,key = lambda x: x[1])
         _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group sorted_groups is {sorted_groups}')
 
         #sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
@@ -434,16 +434,16 @@ class Roller(Agent):
 
 
     # method used to calculate new zone temp setpoints
-    def get_adjust_zone_setpoints(rpc_data,group,znt_offset):
+    def get_adjust_zone_setpoints(self,rpc_data,group,znt_offset):
         new_setpoints = []
         old_setpoints = []
-        for key,setpoint in rpc_data[0].items():
-            for zone in group:
-                if zone == key:
-                    setpoint_new = setpoint + znt_offset
-                    new_setpoints.append(setpoint_new)
-                    old_setpoints.append(setpoint)
-        return new_setpoints,old_setpoints2
+        for topic,setpoint in rpc_data[0].items():
+            device_id = topic.split('/')[2]
+            if self.find_zone(device_id,group):
+                setpoint_new = setpoint + znt_offset
+                new_setpoints.append(setpoint_new)
+                old_setpoints.append(setpoint)
+        return new_setpoints,old_setpoints
 
 
     def cycle_checker(self,cycles):
@@ -548,7 +548,32 @@ class Roller(Agent):
                 _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
 
             except Exception as error:
-                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST LOAD ROLL CHECK data to the Flask App API {error}")
+
+
+            #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
+            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,3)
+
+
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+
+
+            zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
+            zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
+
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
 
 
         elif self.load_shed_topped == True and self.load_shed_bottomed == False:
@@ -560,12 +585,14 @@ class Roller(Agent):
             # If starting COUNT DOWN FOR FIRST TIME
             if self.set_shed_counts_to_one == False:
                 _log.debug(f'*** [Roller Agent INFO] *** -  INIATING shed_counts to 1')
-                for group in self.nested_group_map:
-                    group_map = self.nested_group_map[group]
-                    for k, v in group_map.items():
-                        if k in ('shed_count'):
-                            group_map[k] = 1
-                _log.debug(f'*** [Roller Agent INFO] *** -  set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
+
+                if self.load_shed_cycles != 1:
+                    for group in self.nested_group_map:
+                        group_map = self.nested_group_map[group]
+                        for k, v in group_map.items():
+                            if k in ('shed_count'):
+                                group_map[k] = 1
+                    _log.debug(f'*** [Roller Agent INFO] *** -  set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
                 self.set_shed_counts_to_one = True
                 _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG set_shed_counts_to_one = True SUCCESS')
 
@@ -610,12 +637,36 @@ class Roller(Agent):
                 _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
 
 
+            #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
+            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,3)
+
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+
+            
+            zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
+            zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
+            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
+
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
+
+
         else: 
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
             self.ahu_afternoon_mode_go = False
-            self.set_shed_counts_to_one = False
-            self.load_shed_topped = False
-            self.load_shed_bottomed = False
+            #self.set_shed_counts_to_one = False
+            #self.load_shed_topped = False
+            #self.load_shed_bottomed = False
             _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
 
