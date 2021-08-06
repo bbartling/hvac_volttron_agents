@@ -588,12 +588,25 @@ class Roller(Agent):
             _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode revert all is {rpc_result}!')
 
 
+            # post final payload to FLASK APP to verify shed_counts set back to 0
+            payload = json.dumps(self.nested_group_map)
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode payload DEBUGG is {payload}')
+
+
+            try:
+                requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
+                result, = grequests.map(requests)
+
+                _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+
+            except Exception as error:
+                _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode Error trying POST LOAD ROLL CHECK data to the Flask App API {error}")
+
+
         else: 
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
             self.ahu_afternoon_mode_go = False
-            #self.set_shed_counts_to_one = False
-            #self.load_shed_topped = False
-            #self.load_shed_bottomed = False
+            self.afternoon_mode_complete = True
             _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
 
