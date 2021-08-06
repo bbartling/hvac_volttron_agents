@@ -56,52 +56,32 @@ class Roller(Agent):
 
         self.default_config = {
         "load_shifting_cycle_time_seconds": "300",
-        "preocc_zone_sp_shift": "-3.0",
-        "pre_cool_hour_start": "05:00", 
-        "pre_cool_hour_end": "08:00",
-        "peak_oatemp_hour_start": "13:00", 
-        "peak_oatemp_hour_end": "14:30", 
-        "peak_oatemp_zone_sp_shift": "3.0",   
         "building_topic": "slipstream_internal/slipstream_hq",
         "jci_zonetemp_topic": "ZN-T",
         "trane_zonetemp_topic": "Space Temperature Local",
         "jci_zonetemp_setpoint_topic": "ZN-SP",
         "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
         "znt_scoring_setpoint": "72",
-        "vav_groups_to_override": "1"
         }
 
 
         load_shifting_cycle_time_seconds = int(self.default_config["load_shifting_cycle_time_seconds"])
-        preocc_zone_sp_shift = float(self.default_config["preocc_zone_sp_shift"])
-        pre_cool_hour_start = str(self.default_config["pre_cool_hour_start"])
-        pre_cool_hour_end = str(self.default_config["pre_cool_hour_end"])            
-        peak_oatemp_hour_start = str(self.default_config["peak_oatemp_hour_start"])
-        peak_oatemp_hour_end = str(self.default_config["peak_oatemp_hour_end"])
-        peak_oatemp_zone_sp_shift = float(self.default_config["peak_oatemp_zone_sp_shift"])
         building_topic = str(self.default_config["building_topic"])
         jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
         trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
         jci_zonetemp_setpoint_topic = str(self.default_config["jci_zonetemp_setpoint_topic"])
         trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
         znt_scoring_setpoint = int(self.default_config["znt_scoring_setpoint"])
-        vav_groups_to_override = int(self.default_config["vav_groups_to_override"])
 
 
         self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
-        self.preocc_zone_sp_shift = preocc_zone_sp_shift
-        self.pre_cool_hour_start = pre_cool_hour_start
-        self.pre_cool_hour_end = pre_cool_hour_end       
-        self.peak_oatemp_hour_start = peak_oatemp_hour_start
-        self.peak_oatemp_hour_end = peak_oatemp_hour_end
-        self.peak_oatemp_zone_sp_shift = peak_oatemp_zone_sp_shift
         self.building_topic = building_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
-        self.vav_groups_to_override = vav_groups_to_override
+
 
         _log.debug(f'*** [Roller Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
@@ -121,6 +101,8 @@ class Roller(Agent):
         # metrics used to sift thru zones
         # and calculate scores, etc.
         self.load_shed_cycles = 1
+        self.afternoon_mode_zntsp_adjust = .2
+        self.morning_mode_zntsp_adjust = -0.2
         self.ahu_morning_mode_go = False
         self.afternoon_mode_complete = False
         self.ahu_afternoon_mode_go = False
@@ -201,19 +183,12 @@ class Roller(Agent):
         try:
 
             load_shifting_cycle_time_seconds = int(config["load_shifting_cycle_time_seconds"])
-            preocc_zone_sp_shift = float(config["preocc_zone_sp_shift"])
-            pre_cool_hour_start = str(config["pre_cool_hour_start"])
-            pre_cool_hour_end = str(config["pre_cool_hour_end"])            
-            peak_oatemp_hour_start = str(config["peak_oatemp_hour_start"])
-            peak_oatemp_hour_end = str(config["peak_oatemp_hour_end"])
-            peak_oatemp_zone_sp_shift = float(config["peak_oatemp_zone_sp_shift"])
             building_topic = str(config["building_topic"])
             jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
             trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
             jci_zonetemp_setpoint_topic = str(config["jci_zonetemp_setpoint_topic"])
             trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
             znt_scoring_setpoint = int(config["znt_scoring_setpoint"])
-            vav_groups_to_override = int(config["vav_groups_to_override"])
 
 
         except ValueError as e:
@@ -224,19 +199,13 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIG FILE LOAD SUCCESS!')
 
         self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
-        self.preocc_zone_sp_shift = preocc_zone_sp_shift
-        self.pre_cool_hour_start = pre_cool_hour_start
-        self.pre_cool_hour_end = pre_cool_hour_end       
-        self.peak_oatemp_hour_start = peak_oatemp_hour_start
-        self.peak_oatemp_hour_end = peak_oatemp_hour_end
-        self.peak_oatemp_zone_sp_shift = peak_oatemp_zone_sp_shift
         self.building_topic = building_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
-        self.vav_groups_to_override = vav_groups_to_override
+
 
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIGS SET SUCCESS!')
 
@@ -459,6 +428,10 @@ class Roller(Agent):
         return sum(check_sum) == len(check_sum) * cycles
 
 
+    def merge(self,list1, list2):
+        merged_list = tuple(zip(list1, list2)) 
+        return merged_list
+
 
     @Core.receiver("onstart")
     def onstart(self, sender, **kwargs):
@@ -538,7 +511,7 @@ class Roller(Agent):
             #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
-            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,.3)
+            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,self.afternoon_mode_zntsp_adjust)
 
 
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
@@ -550,26 +523,26 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
 
 
-            overide_zone_list = []
-            for new_setpoint in new_setpoints_adjust_group:
-                #_log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode overide_zone_list new_setpoint DEBUGG is {new_setpoint}')
-                for zone in adjust_zones:
-                    #_log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode overide_zone_list zone DEBUGG is {zone}')
-                    final_topic = '/'.join([zone, str(new_setpoint)])
-                    _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode overide_zone_list final_topic DEBUGG is {final_topic}')
-
- 
-            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode overide_zone_list DEBUGG is {overide_zone_list}')
+            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+            bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_override is {bacnet_override}!')
 
 
-            release_zone_list = []
-            for zone in release_zones:
-                    final_topic = '/'.join([zone, str(None)])
-                    release_zone_list.append(final_topic) 
-            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode release_zone_list DEBUGG is {release_zone_list}')
+            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+            none_list = []
+            for i in range(len(release_zones)):
+                none_list.append(None)
+
+            bacnet_release = list(self.merge(release_zones,none_list))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_release is {bacnet_release}!')
 
 
+            final_rpc_data = bacnet_override + bacnet_release
+            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_rpc_data is {final_rpc_data}!')
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode rpc_result is {rpc_result}!')
   
+
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
                 result, = grequests.map(requests)
@@ -580,11 +553,10 @@ class Roller(Agent):
                 _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
 
 
-        elif self.load_shed_topped == True and self.afternoon_mode_complete == False:
 
+        elif self.load_shed_topped == True and self.afternoon_mode_complete == False:
             # if TRUE start counting down
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG NEED TO DO A FINAL BACnet RELEASE and set shed counts back to zero')
-
             #afternoon_mode_final_release
 
 
@@ -598,22 +570,23 @@ class Roller(Agent):
             self.afternoon_mode_complete == True
 
  
-            revert_multi_topic_values_algorithm = []
+            final_bacnet_release = []
             for group in self.nested_group_map:
                 for zones, bacnet_id in self.nested_group_map[group].items():
                     if zones not in ('score', 'shed_count'):
                         topic = '/'.join([self.building_topic, bacnet_id])
                         if int(bacnet_id) > 10000: # its a trane controller
                             final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
-                            revert_multi_topic_values_algorithm.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
                         else:
                             final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
-                            revert_multi_topic_values_algorithm.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV  
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV  
 
 
-            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode revert_multi_topic_values_algorithm is {revert_multi_topic_values_algorithm}!')
-            result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, revert_multi_topic_values_algorithm).get(timeout=90)
-            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode revert all is {result}!')
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_bacnet_release is {final_bacnet_release}!')
+            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode revert all is {rpc_result}!')
+
 
         else: 
             _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')

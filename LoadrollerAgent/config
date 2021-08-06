@@ -1,18 +1,10 @@
 {
 
-  "load_shifting_cycle_time_seconds": "1800",
-  "preocc_zone_sp_shift": "-3.0",
-  "pre_cool_hour_start": "05:00", 
-  "pre_cool_hour_end": "08:00",
-  "peak_oatemp_hour_start": "13:00", 
-  "peak_oatemp_hour_end": "14:30", 
-  "peak_oatemp_zone_sp_shift": "3.0",   
   "building_topic": "slipstream_internal/slipstream_hq",
   "jci_zonetemp_topic": "ZN-T",
   "trane_zonetemp_topic": "Space Temperature Local",
   "jci_zonetemp_setpoint_topic": "ZN-SP",
-  "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint Active",
+  "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
   "znt_scoring_setpoint": "72",
-  "vav_groups_to_override": "1"
 
 }
