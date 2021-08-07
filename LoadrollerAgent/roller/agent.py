@@ -55,33 +55,50 @@ class Roller(Agent):
 
 
         self.default_config = {
-        "load_shifting_cycle_time_seconds": "300",
         "building_topic": "slipstream_internal/slipstream_hq",
+        "ahu_topic": "slipstream_internal/slipstream_hq/1100/Occupancy Request",
         "jci_zonetemp_topic": "ZN-T",
         "trane_zonetemp_topic": "Space Temperature Local",
         "jci_zonetemp_setpoint_topic": "ZN-SP",
         "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
+        "jci_occ_topic": "OCC-SCHEDULE",
+        "trane_occ_topic": "Occupancy Request",
         "znt_scoring_setpoint": "72",
+        "load_shed_cycles": "1",
+        "load_shifting_cycle_time_seconds": "300",
+        "afternoon_mode_zntsp_adjust": ".2",
+        "morning_mode_zntsp_adjust": "-0.2"
         }
 
 
-        load_shifting_cycle_time_seconds = int(self.default_config["load_shifting_cycle_time_seconds"])
         building_topic = str(self.default_config["building_topic"])
+        ahu_topic = str(self.default_config["ahu_topic"])
         jci_zonetemp_topic = str(self.default_config["jci_zonetemp_topic"])
         trane_zonetemp_topic = str(self.default_config["trane_zonetemp_topic"])
         jci_zonetemp_setpoint_topic = str(self.default_config["jci_zonetemp_setpoint_topic"])
         trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
+        jci_occ_topic = str(self.default_config["jci_occ_topic"])
+        trane_occ_topic = str(self.default_config["trane_occ_topic"])
         znt_scoring_setpoint = int(self.default_config["znt_scoring_setpoint"])
+        load_shed_cycles = int(self.default_config["load_shed_cycles"])
+        load_shifting_cycle_time_seconds = int(self.default_config["load_shifting_cycle_time_seconds"])
+        afternoon_mode_zntsp_adjust = float(self.default_config["afternoon_mode_zntsp_adjust"])
+        morning_mode_zntsp_adjust = float(self.default_config["morning_mode_zntsp_adjust"])
 
 
-        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
         self.building_topic = building_topic
+        self.ahu_topic = ahu_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
+        self.jci_occ_topic = jci_occ_topic
+        self.trane_occ_topic = trane_occ_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
-
+        self.load_shed_cycles = load_shed_cycles
+        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
+        self.afternoon_mode_zntsp_adjust = afternoon_mode_zntsp_adjust
+        self.morning_mode_zntsp_adjust = morning_mode_zntsp_adjust
 
         _log.debug(f'*** [Roller Agent INFO] *** -  DEFAULT CONFIG LOAD SUCCESS!')
 
@@ -100,16 +117,20 @@ class Roller(Agent):
 
         # metrics used to sift thru zones
         # and calculate scores, etc.
-        self.load_shed_cycles = 1
-        self.afternoon_mode_zntsp_adjust = .2
-        self.morning_mode_zntsp_adjust = -0.2
         self.ahu_morning_mode_go = False
+        self.afternoon_bacnet_final_release = False
+        self.morning_bacnet_final_release = False  
         self.afternoon_mode_complete = False
+        self.afternoon_load_shed_topped = False
+        self.afternoon_load_shed_bottomed = False
         self.ahu_afternoon_mode_go = False
-        self.load_shed_topped = False
-        self.load_shed_bottomed = False
+        self.morning_load_shed_topped = False
+        self.morning_mode_complete = False
+        self.morning_mode_final_release = False
+        self.morning_load_shed_bottomed = False
         self.set_shed_counts_to_one = False
-
+        self.ahu_off = 2
+        self.ahu_on = 1
 
         # BACnet devices/groups data structure
         self.nested_group_map = {
@@ -182,13 +203,19 @@ class Roller(Agent):
 
         try:
 
-            load_shifting_cycle_time_seconds = int(config["load_shifting_cycle_time_seconds"])
             building_topic = str(config["building_topic"])
+            ahu_topic = str(config["ahu_topic"])
             jci_zonetemp_topic = str(config["jci_zonetemp_topic"])
             trane_zonetemp_topic = str(config["trane_zonetemp_topic"])
             jci_zonetemp_setpoint_topic = str(config["jci_zonetemp_setpoint_topic"])
             trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
+            jci_occ_topic = str(config["jci_occ_topic"])
+            trane_occ_topic = str(config["trane_occ_topic"])
             znt_scoring_setpoint = int(config["znt_scoring_setpoint"])
+            load_shed_cycles = int(config["load_shed_cycles"])
+            load_shifting_cycle_time_seconds = int(config["load_shifting_cycle_time_seconds"])
+            afternoon_mode_zntsp_adjust = float(config["afternoon_mode_zntsp_adjust"])
+            morning_mode_zntsp_adjust = float(config["morning_mode_zntsp_adjust"])
 
 
         except ValueError as e:
@@ -198,13 +225,20 @@ class Roller(Agent):
 
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIG FILE LOAD SUCCESS!')
 
-        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
+
         self.building_topic = building_topic
+        self.ahu_topic = ahu_topic
         self.jci_zonetemp_topic = jci_zonetemp_topic
         self.trane_zonetemp_topic = trane_zonetemp_topic
         self.jci_zonetemp_setpoint_topic = jci_zonetemp_setpoint_topic
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
+        self.jci_occ_topic = jci_occ_topic
+        self.trane_occ_topic = trane_occ_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
+        self.load_shed_cycles = load_shed_cycles
+        self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
+        self.afternoon_mode_zntsp_adjust = afternoon_mode_zntsp_adjust
+        self.morning_mode_zntsp_adjust = morning_mode_zntsp_adjust
 
 
         _log.debug(f'*** [Roller Agent INFO] *** -  CONFIGS SET SUCCESS!')
@@ -277,6 +311,15 @@ class Roller(Agent):
                 temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
         #_log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
         return temps
+
+
+    # used on morning mode when agent needs to override occupancy of VAV boxes
+    # returns a list converted from zone temp setpoint to occ BAS points of the VAV boxes
+    def zntsp_occ_converter(self,device_list)
+        for i in range(len(device_list)):
+            device_list[i] = device_list[i].replace('ZN-SP', 'OCC-SCHEDULE')
+            device_list[i] = device_list[i].replace('Space Temperature Setpoint Active', 'Occupancy Request')
+        return device_list
 
 
     # this method call get_group_temps
@@ -445,27 +488,29 @@ class Roller(Agent):
         _log.debug(f'*** [Roller Agent INFO] *** -  AGENT ONSTART CALL!')
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
-        self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
+        #self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
+        self.core.periodic(self.load_shifting_cycle_time_seconds, self.morning_mode_go_activate)
         _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
     # this is the method called on an interval when demand response is True
     # NOTES: ONLY DIFFERENCE IS DE-SHED AND SHED METHODS if top_reached of load_shed_cycles
     def afternoon_mode_go_activate(self):
+
         _log.debug(f'*** [Roller Agent INFO] *** -  STARTING afternoon_mode_go_activate FUNCTION!')
         _log.debug(f'*** [Roller Agent INFO] *** -  self.ahu_afternoon_mode_go is {self.ahu_afternoon_mode_go}')
 
         top_reached = self.cycle_checker(self.load_shed_cycles)
         _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
         if top_reached:
-            self.load_shed_topped = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_topped = True !')
+            self.afternoon_load_shed_topped = True
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.afternoon_load_shed_topped = True !')
 
         self.ahu_afternoon_mode_go = True
 
 
 
-        if self.load_shed_topped == False and self.afternoon_mode_complete == False:
+        if self.afternoon_load_shed_topped == False and self.afternoon_mode_complete == False:
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG NEED TO COUNT UP NOW on shed_count')
             
 
@@ -481,6 +526,7 @@ class Roller(Agent):
             zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode zone_setpoints_data values is {zone_setpoints_data}')
+
 
             adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode adjust_zones values is {adjust_zones}')
@@ -501,7 +547,6 @@ class Roller(Agent):
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
                 result, = grequests.map(requests)
-
                 _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode POSTED LOAD ROLL DATA TO FLASK SUCCESS")
 
             except Exception as error:
@@ -518,20 +563,11 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
 
-            zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
-            zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
-            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
-
-
-            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
-            bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
-            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_override is {bacnet_override}!')
-
-
             # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
             none_list = []
             for i in range(len(release_zones)):
                 none_list.append(None)
+
 
             bacnet_release = list(self.merge(release_zones,none_list))
             _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_release is {bacnet_release}!')
@@ -541,12 +577,16 @@ class Roller(Agent):
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
             _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_rpc_data is {final_rpc_data}!')
             _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode rpc_result is {rpc_result}!')
-  
+
+
+            zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
+            zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
+
 
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
                 result, = grequests.map(requests)
-
                 _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
 
             except Exception as error:
@@ -554,40 +594,19 @@ class Roller(Agent):
 
 
 
-        elif self.load_shed_topped == True and self.afternoon_mode_complete == False:
+        elif self.afternoon_load_shed_topped == True and self.afternoon_mode_complete == False:
+
             # if TRUE start counting down
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG NEED TO DO A FINAL BACnet RELEASE and set shed counts back to zero')
-            #afternoon_mode_final_release
-
 
             for group in self.nested_group_map:
                 group_map = self.nested_group_map[group]
                 for k, v in group_map.items():
                     if k in ('shed_count'):
                         group_map[k] = 0
-
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode shed count should be all zero check nested_group_map: {self.nested_group_map}')
-            self.afternoon_mode_complete == True
 
  
-            final_bacnet_release = []
-            for group in self.nested_group_map:
-                for zones, bacnet_id in self.nested_group_map[group].items():
-                    if zones not in ('score', 'shed_count'):
-                        topic = '/'.join([self.building_topic, bacnet_id])
-                        if int(bacnet_id) > 10000: # its a trane controller
-                            final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
-                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
-                        else:
-                            final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
-                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV  
-
-
-            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_bacnet_release is {final_bacnet_release}!')
-            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
-            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode revert all is {rpc_result}!')
-
-
             # post final payload to FLASK APP to verify shed_counts set back to 0
             payload = json.dumps(self.nested_group_map)
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode payload DEBUGG is {payload}')
@@ -596,7 +615,6 @@ class Roller(Agent):
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
                 result, = grequests.map(requests)
-
                 _log.debug(f"*** [Setter Agent INFO] *** - afternoon mode POSTED LOAD ROLL DATA TO FLASK SUCCESS")
 
             except Exception as error:
@@ -604,62 +622,60 @@ class Roller(Agent):
 
 
         else: 
-            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG WE ON THE ELSE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode ON THE ELSE check for final_bacnet_release is {self.afternoon_bacnet_final_release}!')
+
+            if self.afternoon_bacnet_final_release == False:
+                _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode ON THE ELSE looks like we need to BACnet release!')
+                final_bacnet_release = []
+                for group in self.nested_group_map:
+                    for zones, bacnet_id in self.nested_group_map[group].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                                final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
+                            else:
+                                final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                                final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN JCI VAV
+
+                final_bacnet_release.append((ahu_topic, None))
+                rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+                _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_bacnet_release is result {rpc_result}!')
+
+
             self.ahu_afternoon_mode_go = False
             self.afternoon_mode_complete = True
+            self.afternoon_bacnet_final_release = True
             _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
 
 
     def morning_mode_go_activate(self):
-        '''
-        NOTES
-        if self.ahu_occ_status == 2 and self.ahu_morning_mode_go == False:
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
-            self.ahu_morning_mode_go = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL MORNING MODE SEQUENCES')
-            _log.debug(f'*** [Roller Agent INFO] *** -  DRIVE DOWN ALL ZONE TEMP SETPOINTS -3')
-            _log.debug(f'*** [Roller Agent INFO] *** -  FIRST OCCUPY THE AHU & CORRECT ZONE OCC VALS OF 1')
-            _log.debug(f'*** [Roller Agent INFO] *** -  BACnet SET ALL OTHER ZONES TO UNNOC VALUES OF 2')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE OCCs TO BAS')
-            self.ahu_morning_mode_go = False
-        '''
 
-        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING afternoon_mode_go_activate FUNCTION!')
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.ahu_morning_mode_go is {self.ahu_morning_mode_go}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode STARTING afternoon_mode_go_activate FUNCTION!')
+        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.ahu_morning_mode_go is {self.ahu_morning_mode_go}')
 
         top_reached = self.cycle_checker(self.load_shed_cycles)
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.cycle_checker top_reached is {top_reached}')
+
         if top_reached:
-            self.load_shed_topped = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_topped = True !')
+            self.morning_load_shed_topped = True
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.morning_load_shed_topped = True !')
 
 
         if self.ahu_morning_mode_go == True:
             bottom_reached = self.cycle_checker(0)
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker bottom_reached is {bottom_reached}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.cycle_checker bottom_reached is {bottom_reached}')
             if bottom_reached:
-                self.load_shed_bottomed = True
-                _log.debug(f'*** [Roller Agent INFO] *** -  self.load_shed_bottomed = True !')
+                self.morning_load_shed_bottomed = True
+                _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.morning_load_shed_bottomed = True !')
 
         self.ahu_morning_mode_go = True
 
-        '''
-        NOTES
-        if self.ahu_occ_status == 1 and self.ahu_morning_mode_go == False:
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO START AHU! AND SHED ZONES TO OCC')
-            self.ahu_morning_mode_go = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  NEED TO IMPLEMENT SPECIAL AFTERNOON MODE SEQUENCES')
-            _log.debug(f'*** [Roller Agent INFO] *** -  SET CORRECT ZONE-SP +3, OTHERS NONE')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RUN THROUGH ALL CYCLES ZONE FOR ZONE')
-            _log.debug(f'*** [Roller Agent INFO] *** -  RELEASE ZNT-SPs TO BAS')
-            self.ahu_morning_mode_go = False
-        '''
 
-        if self.load_shed_topped == False and self.load_shed_bottomed == False:
-            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT UP NOW on shed_count')
+        if self.morning_load_shed_topped == False and self.morning_load_shed_bottomed == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG NEED TO COUNT UP NOW on shed_count')
             
 
             # Use the Zone Temp Data to Score the Groups
@@ -667,75 +683,125 @@ class Roller(Agent):
             self.score_groups()
             shed_zones = self.get_shed_group()
             shed_this_zone = shed_zones[0]
-            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED ZONES: {shed_zones}')        
-            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT UP SHED THIS ZONE: {shed_this_zone}')   
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT UP SHED ZONES: {shed_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT UP SHED THIS ZONE: {shed_this_zone}')   
 
 
             zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_data values is {zone_setpoints_data}')
 
+
+            # morning mode these same list results are converted for occupancy VAV box points as well
+            # convert from zone temp setpoint to occupancy for rpc on zntsp_occ_converter method used further below
             adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode release_zones values is {release_zones}')
 
 
-            # Move this code to end after RPC call to UNOC the Zones
             # ADD a 1 to the zone that was shed for memory on algorithm calculation
             self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
-            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter +1 SUCCESS on group {shed_this_zone}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode shed_counter +1 SUCCESS on group {shed_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.nested_group_map is {self.nested_group_map}')
 
 
             payload = json.dumps(self.nested_group_map)
-            _log.debug(f'*** [Roller Agent INFO] *** -  payload DEBUGG is {payload}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode payload DEBUGG is {payload}')
 
 
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
                 result, = grequests.map(requests)
-
-                _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode POSTED LOAD ROLL DATA TO FLASK SUCCESS")
 
             except Exception as error:
-                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST LOAD ROLL CHECK data to the Flask App API {error}")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST LOAD ROLL CHECK data to the Flask App API {error}")
 
 
-            #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
-            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,0.3)
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
+            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,-3.0)
 
 
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
 
-            zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
-            zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
-            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
+            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+            bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_override is {bacnet_override}!')
+
+
+            # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
+            occ_override_list = zntsp_occ_converter(adjust_zones)
+            occ_vals = []
+            for i in range(len(adjust_zones)):
+                occ_vals.append(1) # bacnet value for occupied            
+            occ_override_list_final = list(self.merge(occ_override_list,occ_vals))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode occ_override_list_final is {occ_override_list_final}!')
+
+
+            # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
+            occ_release_list = zntsp_occ_converter(release_zones)
+            occ_release_vals = []
+            for i in range(len(release_zones)):
+                occ_release_vals.append(None) # bacnet value for release to BAS 
+            occ_release_list_final = list(self.merge(occ_override_list,occ_release_vals))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode occ_release_list_final is {occ_release_list_final}!')
+
+
+            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+            none_list = []
+            for i in range(len(release_zones)):
+                none_list.append(None)
+            bacnet_release = list(self.merge(release_zones,none_list))
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_release is {bacnet_release}!')
+
+
+            if self.ahu_occ_status == 2:
+                _log.debug(f'*** [Setter Agent INFO] *** -  THE AHU IS OFF, BACnet value for occ request: {self.ahu_occ_status}!')
+                bacnet_override.append((ahu_topic,ahu_on))
+                _log.debug(f'*** [Setter Agent INFO] *** -  AHU ON is added to OVERRIDE LIST, bacnet_override is : {bacnet_override}!')
+            _log.debug(f'*** [Setter Agent INFO] *** -  THE AHU IS ON, BACnet value for occ request: {self.ahu_occ_status}!')
+
+
+            # combine all RPC data for overrides and releases for occupancy and zone temperature setpoints
+            final_rpc_data = bacnet_override + occ_override_list_final + bacnet_release + occ_release_list_final
+            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_rpc_data is {final_rpc_data}!')
+            _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode rpc_result is {rpc_result}!')
+
+
+            data_check_ = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,
+            f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group,
+            f'occ vals for {shed_this_zone}':occ_override_list_final
+            }
+
+
+            data_check_payload = json.dumps(data_check_)
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode data_check_payload DEBUGG is {data_check_payload}')
 
 
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
                 result, = grequests.map(requests)
-
-                _log.debug(f"*** [Setter Agent INFO] *** - POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
 
             except Exception as error:
-                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
 
 
-        elif self.load_shed_topped == True and self.load_shed_bottomed == False:
+        elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False:
 
             # if TRUE start counting down
-            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG NEED TO COUNT DOWN NOW on shed_count')
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.set_shed_counts_to_one  is {self.set_shed_counts_to_one}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG NEED TO COUNT DOWN NOW on shed_count')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.set_shed_counts_to_one  is {self.set_shed_counts_to_one}')
             
 
             # If starting COUNT DOWN FOR FIRST TIME
             if self.set_shed_counts_to_one == False:
-                _log.debug(f'*** [Roller Agent INFO] *** -  INIATING shed_counts to 1')
+                _log.debug(f'*** [Roller Agent INFO] *** -  morning mode INIATING shed_counts to 1')
+
 
                 if self.load_shed_cycles != 1:
                     for group in self.nested_group_map:
@@ -743,9 +809,9 @@ class Roller(Agent):
                         for k, v in group_map.items():
                             if k in ('shed_count'):
                                 group_map[k] = 1
-                    _log.debug(f'*** [Roller Agent INFO] *** -  set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
+                    _log.debug(f'*** [Roller Agent INFO] *** -  morning mode set_shed_counts_to_one complete nested group man is {self.nested_group_map}')
                 self.set_shed_counts_to_one = True
-                _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG set_shed_counts_to_one = True SUCCESS')
+                _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG set_shed_counts_to_one = True SUCCESS')
 
 
             # Use the Zone Temp Data to Score the Groups
@@ -753,72 +819,92 @@ class Roller(Agent):
             self.score_groups()
             release_zones = self.get_release_group()
             release_this_zone = release_zones[0]
-            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE ZONES: {release_zones}')        
-            _log.debug(f'*** [Roller Agent INFO] *** -  COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT DOWN RELEASE ZONES: {release_zones}')        
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
 
 
             zone_setpoints = self.rpc_get_mult_setpoints(release_zones)
             zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_data values is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_data values is {zone_setpoints_data}')
 
 
             adjust_zones,release_zones = self.rpc_data_splitter(release_this_zone,zone_setpoints_data)
-            _log.debug(f'*** [Roller Agent INFO] *** -  adjust_zones values is {adjust_zones}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  release_zones values is {release_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode adjust_zones values is {adjust_zones}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode release_zones values is {release_zones}')
 
 
             # Move this code to end after RPC call to UNOC the Zones
             # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
             self.nested_group_map[release_this_zone]['shed_count'] = self.nested_group_map[release_this_zone]['shed_count'] - 1
-            _log.debug(f'*** [Roller Agent INFO] *** -  shed_counter -1 SUCCESS on group {release_this_zone}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.nested_group_map is {self.nested_group_map}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode shed_counter -1 SUCCESS on group {release_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.nested_group_map is {self.nested_group_map}')
 
 
             payload = json.dumps(self.nested_group_map)
-            _log.debug(f'*** [Roller Agent INFO] *** -  payload DEBUGG is {payload}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode payload DEBUGG is {payload}')
 
 
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/load-roll-check", json=payload),)
                 result, = grequests.map(requests)
-
-                _log.debug(f"*** [Setter Agent INFO] *** - POSTED LOAD ROLL DATA TO FLASK SUCCESS")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode POSTED LOAD ROLL DATA TO FLASK SUCCESS")
 
             except Exception as error:
-                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST form data to the Flask App API {error}")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST form data to the Flask App API {error}")
 
 
             #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints DEBUGG release_this_zone is {release_this_zone}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG release_this_zone is {release_this_zone}')
             new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,release_this_zone,3)
 
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
             
             zone_setpoints_check = {f'old setpoints for {release_this_zone}':old_setpoints_adjust_group,f'new setpoints for {release_this_zone}':new_setpoints_adjust_group}
             zone_setpoints_check_payload = json.dumps(zone_setpoints_check)
-            _log.debug(f'*** [Roller Agent INFO] *** -  zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_check_payload DEBUGG is {zone_setpoints_check_payload}')
 
 
             try:
                 requests = (grequests.post("http://10.200.200.224:5000/zone-setpoints-check", json=zone_setpoints_check_payload),)
                 result, = grequests.map(requests)
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
 
-                _log.debug(f"*** [Setter Agent INFO] *** - POSTED ZONE SETPOINTS DATA TO FLASK SUCCESS")
 
             except Exception as error:
-                _log.debug(f"*** [Setter Agent INFO] *** - Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
+                _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
+
 
 
         else: 
-            _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG WE ARE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG WE ON THE ELSE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
+            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode ON THE ELSE check for final_bacnet_release is {self.morning_bacnet_final_release}!')
+
+            if self.morning_bacnet_final_release == False:
+                _log.debug(f'*** [Roller Agent INFO] *** -  morning mode ON THE ELSE looks like we need to BACnet release!')
+                final_bacnet_release = []
+                for group in self.nested_group_map:
+                    for zones, bacnet_id in self.nested_group_map[group].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                                final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
+                            else:
+                                final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                                final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV
+
+                final_bacnet_release.append((ahu_topic, None))
+                rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_bacnet_release is result {rpc_result}!')
+
             self.ahu_morning_mode_go = False
-            #self.set_shed_counts_to_one = False
-            #self.load_shed_topped = False
-            #self.load_shed_bottomed = False
+            self.morning_mode_complete = True
+            self.morning_bacnet_final_release = True
             _log.debug(f'*** [Roller Agent INFO] *** -  DONE DEAL WE SHOULD BE ALL RESET NOW!')
+
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):

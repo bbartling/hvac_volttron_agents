@@ -1,10 +1,17 @@
 {
 
   "building_topic": "slipstream_internal/slipstream_hq",
+  "ahu_topic": "slipstream_internal/slipstream_hq/1100/Occupancy Request",
   "jci_zonetemp_topic": "ZN-T",
   "trane_zonetemp_topic": "Space Temperature Local",
   "jci_zonetemp_setpoint_topic": "ZN-SP",
   "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
+  "jci_occ_topic": "OCC-SCHEDULE",
+  "trane_occ_topic": "Occupancy Request",
   "znt_scoring_setpoint": "72",
+  "load_shed_cycles": "1",
+  "load_shifting_cycle_time_seconds": "300",
+  "afternoon_mode_zntsp_adjust": ".2",
+  "morning_mode_zntsp_adjust": "-0.2"
 
 }
