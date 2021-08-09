@@ -53,7 +53,6 @@ class Roller(Agent):
         _log.debug("vip_identity: " + self.core.identity)
 
 
-
         self.default_config = {
         "building_topic": "slipstream_internal/slipstream_hq",
         "ahu_topic": "slipstream_internal/slipstream_hq/1100/Occupancy Request",
@@ -128,6 +127,9 @@ class Roller(Agent):
         self.morning_mode_complete = False
         self.morning_mode_final_release = False
         self.morning_load_shed_bottomed = False
+        self.morning_inital_unnoc_sweep = False
+        self.morning_pre_cool_hour_complete = False
+        self.morning_pre_cool_hour_passes = 0
         self.set_shed_counts_to_one = False
         self.ahu_off = 2
         self.ahu_on = 1
@@ -489,8 +491,39 @@ class Roller(Agent):
         #self.vip.config.set('my_config_file_entry', {"an": "entry"}, trigger_callback=True)
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
         #self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
-        self.core.periodic(self.load_shifting_cycle_time_seconds, self.morning_mode_go_activate)
+        #self.core.periodic(self.load_shifting_cycle_time_seconds, self.morning_mode_go_activate)
+        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_signal_checker)
         _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
+
+
+    def dr_signal_checker(self):
+
+        try:
+            requests = (grequests.get(self.url),)
+            result, = grequests.map(requests)
+            contents = result.json()
+            _log.debug(f"Flask App API SUCCESS")
+            sig_payload = contents["current_state"]
+
+        except Exception as error:
+            _log.debug(f"*** [Roller Agent SIG CHECKER Agent INFO] *** - Error trying Flask App API {error}")
+            _log.debug(f"*** [Roller Agent SIG CHECKER Agent INFO] *** - RESORTING TO NO DEMAND RESPONSE EVENT")
+            sig_payload = 0
+
+        _log.debug(f'*** [Roller Agent SIG CHECKER Agent INFO] *** - signal_payload from Flask App is {sig_payload}!')
+
+
+        if sig_payload == 1:
+            _log.debug(f'*** [Roller Agent SIG CHECKER Agent INFO] *** - MORNING MODE GO!!!!')
+            self.morning_mode_go_activate()
+
+        elif sig_payload == 2:
+            _log.debug(f'*** [Roller Agent SIG CHECKER Agent INFO] *** - AFTERNOON MODE GO!!!!')
+            self.afternoon_mode_go_activate()
+
+        else:
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** -  NO DR EVENT SIG == 0!')
+
 
 
     # this is the method called on an interval when demand response is True
@@ -729,46 +762,45 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
 
+            # override zone temp setpoints for this group
             # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
             bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode bacnet_override is {bacnet_override}!')
 
 
+            # override occupancy for this same group getting a modified zone temp setpoint
             # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
-            occ_override_list = self.zntsp_occ_converter(adjust_zones)
+            occ_override_adjust = self.zntsp_occ_converter(adjust_zones)
             occ_vals = []
             for i in range(len(adjust_zones)):
                 occ_vals.append(1) # bacnet value for occupied            
-            occ_override_list_final = list(self.merge(occ_override_list,occ_vals))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_list_final is {occ_override_list_final}!')
-
-
-            # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
-            occ_release_list = self.zntsp_occ_converter(release_zones)
-            occ_release_vals = []
-            for i in range(len(release_zones)):
-                occ_release_vals.append(None) # bacnet value for release to BAS 
-            occ_release_list_final = list(self.merge(occ_override_list,occ_release_vals))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_release_list_final is {occ_release_list_final}!')
-
-
-            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
-            none_list = []
-            for i in range(len(release_zones)):
-                none_list.append(None)
-            bacnet_release = list(self.merge(release_zones,none_list))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode bacnet_release is {bacnet_release}!')
+            occ_override_adjust = list(self.merge(occ_override_list,occ_vals))
+            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_adjust is {occ_override_adjust}!')
 
 
             if self.ahu_occ_status == 2:
                 _log.debug(f'*** [Setter Agent INFO] *** -  morning mode THE AHU IS OFF, BACnet value for occ request: {self.ahu_occ_status}!')
-                #bacnet_override.append((ahu_topic,ahu_on))
-                #_log.debug(f'*** [Setter Agent INFO] *** -  AHU ON is added to OVERRIDE LIST, bacnet_override is : {bacnet_override}!')
+                bacnet_override.append((self.ahu_topic,self.ahu_on))
+                _log.debug(f'*** [Setter Agent INFO] *** -  AHU ON is added to OVERRIDE LIST, bacnet_override is : {bacnet_override}!')
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode THE AHU IS ON, BACnet value for occ request: {self.ahu_occ_status}!')
 
 
-            # combine all RPC data for overrides and releases for occupancy and zone temperature setpoints
-            final_rpc_data = bacnet_override + occ_override_list_final + bacnet_release + occ_release_list_final
+            if self.morning_inital_unnoc_sweep == False:
+                # start making sure release_zones VAV boxes are unnoccupied
+                release_zones_unnoc = self.zntsp_occ_converter(release_zones)
+                occ_vals = []
+                for i in range(len(release_zones)):
+                    occ_vals.append(2) # # bacnet value for unnocupied         
+                occ_override_list_release = list(self.merge(release_zones_unnoc,occ_vals))
+                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_list_release is {occ_override_list_release}!')
+                self.morning_inital_unnoc_sweep = True
+
+                final_rpc_data = bacnet_override + occ_override_list_final + occ_override_list_release
+
+            else:
+                final_rpc_data = bacnet_override + occ_override_list_final
+
+
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_rpc_data is {final_rpc_data}!')
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode rpc_result is {rpc_result}!')
@@ -793,7 +825,17 @@ class Roller(Agent):
                 _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST ZONE SETPOINTS data to the Flask App API {error}")
 
 
-        elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False:
+        elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False and self.morning_pre_cool_hour_complete == False:
+
+            self.morning_pre_cool_hour_passes += 1
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_passes += 1')
+
+            if self.morning_pre_cool_hour_passes == 2:
+                self.morning_pre_cool_hour_complete = True
+                _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_complete = True OR == 2')
+
+
+        elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False and self.morning_pre_cool_hour_complete == True:
 
             # if TRUE start counting down
             _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG NEED TO COUNT DOWN NOW on shed_count')
@@ -855,60 +897,27 @@ class Roller(Agent):
                 _log.debug(f"*** [Setter Agent INFO] *** - morning mode Error trying POST form data to the Flask App API {error}")
 
 
-            #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
-            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints DEBUGG release_this_zone is {release_this_zone}')
-            new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,release_this_zone,self.morning_mode_zntsp_adjust)
-
-            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
-            _log.debug(f'*** [Roller Agent INFO] *** -  morning mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
-
-
-            # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
-            bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode bacnet_override is {bacnet_override}!')
-
-
-            # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
-            occ_override_list = self.zntsp_occ_converter(adjust_zones)
-            occ_vals = []
-            for i in range(len(adjust_zones)):
-                occ_vals.append(1) # bacnet value for occupied            
-            occ_override_list_final = list(self.merge(occ_override_list,occ_vals))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_list_final is {occ_override_list_final}!')
-
-
-            # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
-            occ_release_list = self.zntsp_occ_converter(release_zones)
-            occ_release_vals = []
-            for i in range(len(release_zones)):
-                occ_release_vals.append(None) # bacnet value for release to BAS 
-            occ_release_list_final = list(self.merge(occ_override_list,occ_release_vals))
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_release_list_final is {occ_release_list_final}!')
-
-
+            # to release zone temp setpoint to BAS
             # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
             none_list = []
-            for i in range(len(release_zones)):
+            for i in range(len(adjust_zones)):
                 none_list.append(None)
-            bacnet_release = list(self.merge(release_zones,none_list))
+            bacnet_release = list(self.merge(adjust_zones,none_list))
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode bacnet_release is {bacnet_release}!')
 
 
-            '''
-            I DONT THINK WE NEED TO WORRY ABOUT AHU ON DESHED IN MORNING MODE
-            FINAL BACnet release should just release to BAS
-
-            if self.ahu_occ_status == 2:
-                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode THE AHU IS OFF, BACnet value for occ request: {self.ahu_occ_status}!')
-                bacnet_override.append((ahu_topic,ahu_on))
-                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode AHU ON is added to OVERRIDE LIST, bacnet_override is : {bacnet_override}!')
-            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode THE AHU IS ON, BACnet value for occ request: {self.ahu_occ_status}!')
-            '''
+            # to release occupancy to BAS
+            # converted to occupancy from zone temp setpoint these lists: adjust_zones
+            occ_release_list = self.zntsp_occ_converter(adjust_zones)
+            occ_release_vals = []
+            for i in range(len(adjust_zones)):
+                occ_release_vals.append(None) # bacnet value for release to BAS 
+            occ_release_list_final = list(self.merge(occ_release_list,occ_release_vals))
+            _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_release_list_final is {occ_release_list_final}!')
 
 
             # combine all RPC data for overrides and releases for occupancy and zone temperature setpoints
-            final_rpc_data = bacnet_override + occ_override_list_final + bacnet_release + occ_release_list_final
+            final_rpc_data = bacnet_release + occ_release_list_final
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_rpc_data is {final_rpc_data}!')
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode rpc_result is {rpc_result}!')
@@ -939,6 +948,7 @@ class Roller(Agent):
             _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DEBUGG WE ON THE ELSE PASSING BECAUSE CYCLED UP AND DOWN COMPETE!')
             _log.debug(f'*** [Roller Agent INFO] *** -  morning mode ON THE ELSE check for final_bacnet_release is {self.morning_bacnet_final_release}!')
 
+
             if self.morning_bacnet_final_release == False:
                 _log.debug(f'*** [Roller Agent INFO] *** -  morning mode ON THE ELSE looks like we need to BACnet release!')
                 final_bacnet_release = []
@@ -953,10 +963,12 @@ class Roller(Agent):
                                 final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
                                 final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV
 
+
                 final_bacnet_release.append((self.ahu_topic, None))
                 rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
                 _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_bacnet_release is result {rpc_result}!')
                 self.morning_bacnet_final_release = True
+
 
             self.ahu_morning_mode_go = False
             _log.debug(f'*** [Roller Agent INFO] *** -  morning mode DONE DEAL WE SHOULD BE ALL RESET NOW!')
@@ -975,12 +987,12 @@ class Roller(Agent):
 def main():
     """Main method called to start the agent."""
 
+
     try:
         utils.vip_main(load_me, version=__version__)
     except Exception as exception:
         _log.exception("unhandled exception")
         _log.error(repr(exception))
-
 
 
 
