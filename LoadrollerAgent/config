@@ -10,8 +10,8 @@
   "trane_occ_topic": "Occupancy Request",
   "znt_scoring_setpoint": "72",
   "load_shed_cycles": "1",
-  "load_shifting_cycle_time_seconds": "300",
-  "afternoon_mode_zntsp_adjust": ".2",
-  "morning_mode_zntsp_adjust": "-0.2"
+  "load_shifting_cycle_time_seconds": "1800",
+  "afternoon_mode_zntsp_adjust": "3.0",
+  "morning_mode_zntsp_adjust": "-3.0"
 
 }

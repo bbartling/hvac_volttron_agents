@@ -63,7 +63,7 @@ class Roller(Agent):
         "jci_occ_topic": "OCC-SCHEDULE",
         "trane_occ_topic": "Occupancy Request",
         "znt_scoring_setpoint": "72",
-        "load_shed_cycles": "0",
+        "load_shed_cycles": "1",
         "load_shifting_cycle_time_seconds": "1800",
         "afternoon_mode_zntsp_adjust": "3.0",
         "morning_mode_zntsp_adjust": "-3.0"
@@ -770,7 +770,7 @@ class Roller(Agent):
 
             # override occupancy for this same group getting a modified zone temp setpoint
             # converted to occupancy from zone temp setpoint these lists: adjust_zones,release_zones
-            occ_override_adjust = self.zntsp_occ_converter(adjust_zones)
+            occ_override_list = self.zntsp_occ_converter(adjust_zones)
             occ_vals = []
             for i in range(len(adjust_zones)):
                 occ_vals.append(1) # bacnet value for occupied            
@@ -786,19 +786,19 @@ class Roller(Agent):
 
 
             if self.morning_inital_unnoc_sweep == False:
-                # start making sure release_zones VAV boxes are unnoccupied
+                # start making sure releasocc_override_adjuste_zones VAV boxes are unnoccupied
                 release_zones_unnoc = self.zntsp_occ_converter(release_zones)
                 occ_vals = []
                 for i in range(len(release_zones)):
                     occ_vals.append(2) # # bacnet value for unnocupied         
-                occ_override_list_release = list(self.merge(release_zones_unnoc,occ_vals))
-                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_list_release is {occ_override_list_release}!')
+                occ_override_release = list(self.merge(release_zones_unnoc,occ_vals))
+                _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_release is {occ_override_release}!')
                 self.morning_inital_unnoc_sweep = True
 
-                final_rpc_data = bacnet_override + occ_override_list_final + occ_override_list_release
+                final_rpc_data = bacnet_override + occ_override_adjust + occ_override_release
 
             else:
-                final_rpc_data = bacnet_override + occ_override_list_final
+                final_rpc_data = bacnet_override + occ_override_adjust
 
 
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
@@ -808,7 +808,7 @@ class Roller(Agent):
 
             data_check_ = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,
             f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group,
-            f'occ vals for {shed_this_zone}':occ_override_list_final
+            f'occ vals for {shed_this_zone}':occ_override_adjust
             }
 
 
@@ -832,7 +832,7 @@ class Roller(Agent):
 
             if self.morning_pre_cool_hour_passes == 2:
                 self.morning_pre_cool_hour_complete = True
-                _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_complete = True OR == 2')
+                _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_G')
 
 
         elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False and self.morning_pre_cool_hour_complete == True:
@@ -923,9 +923,9 @@ class Roller(Agent):
             _log.debug(f'*** [Setter Agent INFO] *** -  morning mode rpc_result is {rpc_result}!')
 
 
-            data_check_ = {f'old setpoints for {release_this_zone}':old_setpoints_adjust_group,
-            f'new setpoints for {release_this_zone}':new_setpoints_adjust_group,
-            f'occ vals for {release_this_zone}':occ_override_list_final
+            data_check_ = {f'IGNORE THIS LINE {release_this_zone}':list(' '),
+            f'bacnet release setpoint vals for {release_this_zone}':bacnet_release,
+            f'occ vals for {release_this_zone}':occ_release_list_final
             }
 
 
