@@ -9,10 +9,11 @@
   "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
   "jci_occ_topic": "OCC-SCHEDULE",
   "trane_occ_topic": "Occupancy Request",
+  "jci_system_mode_topic": "SYSTEM-MODE",
   "znt_scoring_setpoint": "72",
   "load_shed_cycles": "1",
   "load_shifting_cycle_time_seconds": "300",
-  "afternoon_mode_zntsp_adjust": "1.0",
-  "morning_mode_zntsp_adjust": "-1.0"
+  "afternoon_mode_zntsp_adjust": "3.0",
+  "morning_mode_zntsp_adjust": "-3.0"
 
 }

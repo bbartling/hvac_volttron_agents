@@ -63,11 +63,12 @@ class Roller(Agent):
         "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
         "jci_occ_topic": "OCC-SCHEDULE",
         "trane_occ_topic": "Occupancy Request",
+        "jci_system_mode_topic": "SYSTEM-MODE",
         "znt_scoring_setpoint": "72",
         "load_shed_cycles": "1",
         "load_shifting_cycle_time_seconds": "300",
-        "afternoon_mode_zntsp_adjust": "1.0",
-        "morning_mode_zntsp_adjust": "-1.0"
+        "afternoon_mode_zntsp_adjust": "3.0",
+        "morning_mode_zntsp_adjust": "-3.0"
         }
 
 
@@ -80,6 +81,7 @@ class Roller(Agent):
         trane_zonetemp_setpoint_topic = str(self.default_config["trane_zonetemp_setpoint_topic"])
         jci_occ_topic = str(self.default_config["jci_occ_topic"])
         trane_occ_topic = str(self.default_config["trane_occ_topic"])
+        jci_system_mode_topic = str(self.default_config["jci_system_mode_topic"])
         znt_scoring_setpoint = int(self.default_config["znt_scoring_setpoint"])
         load_shed_cycles = int(self.default_config["load_shed_cycles"])
         load_shifting_cycle_time_seconds = int(self.default_config["load_shifting_cycle_time_seconds"])
@@ -97,6 +99,7 @@ class Roller(Agent):
         self.jci_occ_topic = jci_occ_topic
         self.trane_occ_topic = trane_occ_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
+        self.jci_system_mode_topic = jci_system_mode_topic
         self.load_shed_cycles = load_shed_cycles
         self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
         self.afternoon_mode_zntsp_adjust = afternoon_mode_zntsp_adjust
@@ -174,8 +177,8 @@ class Roller(Agent):
             'VMA-2-4': '29',
             'VAV-2-5': '12028',
             'VMA-2-6': '27',
-            'VMA-2-7': '30',
-            'VMA-2-12': '26'
+            #'VMA-2-12': '26',
+            'VMA-2-7': '30'
             },
             'group_l2s' : {
             'score': 0,
@@ -219,6 +222,7 @@ class Roller(Agent):
             trane_zonetemp_setpoint_topic = str(config["trane_zonetemp_setpoint_topic"])
             jci_occ_topic = str(config["jci_occ_topic"])
             trane_occ_topic = str(config["trane_occ_topic"])
+            jci_system_mode_topic = str(config["jci_system_mode_topic"])
             znt_scoring_setpoint = int(config["znt_scoring_setpoint"])
             load_shed_cycles = int(config["load_shed_cycles"])
             load_shifting_cycle_time_seconds = int(config["load_shifting_cycle_time_seconds"])
@@ -243,6 +247,7 @@ class Roller(Agent):
         self.trane_zonetemp_setpoint_topic = trane_zonetemp_setpoint_topic
         self.jci_occ_topic = jci_occ_topic
         self.trane_occ_topic = trane_occ_topic
+        self.jci_system_mode_topic = jci_system_mode_topic
         self.znt_scoring_setpoint = znt_scoring_setpoint
         self.load_shed_cycles = load_shed_cycles
         self.load_shifting_cycle_time_seconds = load_shifting_cycle_time_seconds
@@ -504,7 +509,7 @@ class Roller(Agent):
         self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
         #self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
         #self.core.periodic(self.load_shifting_cycle_time_seconds, self.morning_mode_go_activate)
-        self.core.periodic(self.load_shifting_cycle_time_seconds, self.dr_signal_checker)
+        self.core.periodic(60, self.dr_signal_checker)
         _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
 
 
@@ -536,17 +541,39 @@ class Roller(Agent):
 
         '''
 
-        if (sig_payload == 1 and sig_payload != self.last_payload_sig) or (sig_payload == 1 and (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds))):
+        if sig_payload == 1 and sig_payload != self.last_payload_sig:
             self.last_payload_sig = sig_payload
             self.last_roller_time = get_aware_utc_now()
-            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - "if statement" MORNING MODE GO!!!!')
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - "if statement" MORNING MODE GO first RUN!')
             self.morning_mode_go_activate()
 
-        elif (sig_payload == 2 and sig_payload != self.last_payload_sig) or (sig_payload == 2 and (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds))):
+
+        elif sig_payload == 1 and (self.last_payload_sig == sig_payload):
+            if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
+                self.last_payload_sig = sig_payload
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "elif sig_payload == 1" td good running function!')
+                self.morning_mode_go_activate()
+            else:
+                self.last_payload_sig = sig_payload
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "elif sig_payload == 1" passing waiting for td to clear!')
+
+
+        elif sig_payload == 2 and sig_payload != self.last_payload_sig:
             self.last_payload_sig = sig_payload
             self.last_roller_time = get_aware_utc_now()
-            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - "elif statement" AFTERNOON MODE GO!!!!')
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "if statement" AFTERNOON MODE GO first RUN!')
             self.afternoon_mode_go_activate()
+
+
+        elif sig_payload == 2 and (self.last_payload_sig == sig_payload):
+            if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
+                self.last_payload_sig = sig_payload
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "elif sig_payload == 2" td good running function!')
+                self.afternoon_mode_go_activate()
+            else:
+                self.last_payload_sig = sig_payload
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "elif sig_payload == 2" passing waiting for td to clear!')
+
 
         else:
             _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** -  "else statement" NO DR EVENT SIG == 0!')
@@ -653,9 +680,25 @@ class Roller(Agent):
                 _log.debug(f'*** [Setter Agent INFO] *** -  morning mode occ_override_release is {occ_override_release}!')
                 self.morning_inital_unnoc_sweep = True
 
-                final_rpc_data = bacnet_override + occ_override_adjust + occ_override_release
+
+                # disable reheat valves on all JCI VAV boxes
+                _log.debug(f'*** [Roller Agent INFO] *** -  Going to try and loop thru and set all JCI VAVs to cooling only!')
+                disable_vav_reheat = []
+                for group in self.nested_group_map:
+                    for zones, bacnet_id in self.nested_group_map[group].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                pass
+                            else:
+                                final_topic = '/'.join([topic, self.jci_system_mode_topic])
+                                disable_vav_reheat.append((final_topic, 1)) # JCI VAV reheat disabled
+
+                # initial first run needs to include OCCs as well as heat disabled
+                final_rpc_data = bacnet_override + occ_override_adjust + occ_override_release + disable_vav_reheat
 
             else:
+                # else we are just overriding zones per selected group
                 final_rpc_data = bacnet_override + occ_override_adjust
 
 
@@ -672,7 +715,7 @@ class Roller(Agent):
             # NEED TO ADD IN SOME EXTRA LOGIC HERE ABOUT CALCULATING PASSES
             if self.morning_pre_cool_hour_passes == 4:
                 self.morning_pre_cool_hour_complete = True
-                _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_G')
+                _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_complete')
 
 
         elif self.morning_load_shed_topped == True and self.morning_load_shed_bottomed == False and self.morning_pre_cool_hour_complete == True:
@@ -771,6 +814,23 @@ class Roller(Agent):
 
                 final_bacnet_release.append((self.ahu_topic_occ, None))
                 final_bacnet_release.append((self.ahu_topic_damper, None))
+
+                # disable reheat valves on all JCI VAV boxes
+                _log.debug(f'*** [Roller Agent INFO] *** -  Going to try and loop thru and set all JCI VAVs to cooling only!')
+                release_vav_reheat_override = []
+                for group in self.nested_group_map:
+                    for zones, bacnet_id in self.nested_group_map[group].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                pass
+                            else:
+                                final_topic = '/'.join([topic, self.jci_system_mode_topic])
+                                release_vav_reheat_override.append((final_topic, None)) # JCI VAV reheat disabled
+
+                final_bacnet_release = final_bacnet_release + release_vav_reheat_override
+                _log.debug(f'*** [Roller Agent INFO] *** -  release_vav_reheat_override added to final_bacnet_release {final_bacnet_release}')
+
                 rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
                 _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_bacnet_release is result {rpc_result}!')
                 self.morning_bacnet_final_release = True
@@ -784,14 +844,14 @@ class Roller(Agent):
     # NOTES: ONLY DIFFERENCE IS DE-SHED AND SHED METHODS if top_reached of load_shed_cycles
     def afternoon_mode_go_activate(self):
 
-        _log.debug(f'*** [Roller Agent INFO] *** -  STARTING afternoon_mode_go_activate FUNCTION!')
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.ahu_afternoon_mode_go is {self.ahu_afternoon_mode_go}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  afternoon STARTING afternoon_mode_go_activate FUNCTION!')
+        _log.debug(f'*** [Roller Agent INFO] *** -  afternoon self.ahu_afternoon_mode_go is {self.ahu_afternoon_mode_go}')
 
         top_reached = self.cycle_checker(1)
-        _log.debug(f'*** [Roller Agent INFO] *** -  self.cycle_checker top_reached is {top_reached}')
+        _log.debug(f'*** [Roller Agent INFO] *** -  afternoon self.cycle_checker top_reached is {top_reached}')
         if top_reached:
             self.afternoon_load_shed_topped = True
-            _log.debug(f'*** [Roller Agent INFO] *** -  self.afternoon_load_shed_topped = True !')
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon self.afternoon_load_shed_topped = True !')
 
         self.ahu_afternoon_mode_go = True
 
@@ -902,6 +962,31 @@ class Roller(Agent):
             self.afternoon_bacnet_final_release = True
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
+
+
+    def load_shed_all_zones_go(self):
+        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode STARTING load_shed_all_zones_go FUNCTION!')
+
+        all_zones = ['group_l1n', 'group_l1s', 'group_l2n', 'group_l2s']
+        zone_setpoints = self.rpc_get_mult_setpoints(all_zones)
+        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_data values is {zone_setpoints_data}')
+
+        new_setpoints_all_groups = []
+        for group in all_zones:
+            group_data = self.get_adjust_zone_setpoints(zone_setpoints_data,group,self.afternoon_mode_zntsp_adjust)
+            new_setpoints_all_groups.append(group_data)
+        _log.debug(f'*** [Roller Agent INFO] *** -  new_setpoints_all_groups is {new_setpoints_all_groups}')
+        
+        '''
+        # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+        bacnet_override = list(self.merge(adjust_zones,new_setpoints_all_groups))
+        _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode bacnet_override is {bacnet_override}!')
+
+        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
+        _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_rpc_data is {final_rpc_data}!')
+        _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode rpc_result is {rpc_result}!')
+        '''
 
 
     @RPC.export
