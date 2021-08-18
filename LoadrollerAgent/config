@@ -13,7 +13,7 @@
   "znt_scoring_setpoint": "72",
   "load_shed_cycles": "1",
   "load_shifting_cycle_time_seconds": "300",
-  "afternoon_mode_zntsp_adjust": "3.0",
-  "morning_mode_zntsp_adjust": "-3.0"
+  "afternoon_mode_zntsp_adjust": "0.3",
+  "morning_mode_zntsp_adjust": "-0.3"
 
 }

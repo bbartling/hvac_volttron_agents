@@ -67,8 +67,8 @@ class Roller(Agent):
         "znt_scoring_setpoint": "72",
         "load_shed_cycles": "1",
         "load_shifting_cycle_time_seconds": "300",
-        "afternoon_mode_zntsp_adjust": "3.0",
-        "morning_mode_zntsp_adjust": "-3.0"
+        "afternoon_mode_zntsp_adjust": "0.3",
+        "morning_mode_zntsp_adjust": "-0.3"
         }
 
 
@@ -142,6 +142,7 @@ class Roller(Agent):
         self.last_roller_time = None
         self.last_payload_sig = None
 
+        '''
         # BACnet devices/groups data structure
         self.nested_group_map = {
             'group_l1n' : {
@@ -178,6 +179,56 @@ class Roller(Agent):
             'VAV-2-5': '12028',
             'VMA-2-6': '27',
             #'VMA-2-12': '26',
+            'VMA-2-7': '30'
+            },
+            'group_l2s' : {
+            'score': 0,
+            'shed_count': 0,
+            'VMA-2-8': '34',
+            'VAV-2-9': '12035',
+            'VMA-2-10': '36',
+            'VMA-2-11': '25',
+            'VMA-2-13': '23',
+            'VMA-2-14': '24'
+            }
+        }
+        '''
+
+        # BACnet devices/groups data structure
+        self.nested_group_map = {
+            'group_l1n' : {
+            'score': 0,
+            'shed_count': 0,
+            'VMA-1-1': '14',
+            'VMA-1-2': '13',
+            'VMA-1-3': '15',
+            'VMA-1-4': '11',
+            'VMA-1-5': '9',
+            'VMA-1-7': '7',
+            'VMA-1-10': '21',
+            'VMA-1-11': '16'
+            },
+            'group_l1s' : {
+            'score': 0,
+            'shed_count': 0,
+            'VMA-1-6': '8',
+            'VMA-1-8': '6',
+            'VMA-1-9': '10',
+            'VMA-1-12': '19',
+            'VMA-1-13': '20',
+            'VMA-1-14': '37',
+            'VMA-1-15': '38',
+            'VMA-1-16': '39'
+            },
+            'group_l2n' : {
+            'score': 0,
+            'shed_count': 0,
+            'VAV-2-1': '12032',
+            'VAV-2-2': '12033',
+            'VMA-2-3': '31',
+            'VMA-2-4': '29',
+            'VAV-2-5': '12028',
+            'VMA-2-6': '27',
             'VMA-2-7': '30'
             },
             'group_l2s' : {
@@ -416,7 +467,7 @@ class Roller(Agent):
         #_log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
         # call schedule actuator agent from different method
         for group in groups:
-            _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG GROUP IS {group}')
+            #_log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG GROUP IS {group}')
             for key,value in self.nested_group_map[group].items():
                 if key not in ('score','shed_count'):
                     topic_group_ = '/'.join([self.building_topic, str(value)])
@@ -428,6 +479,7 @@ class Roller(Agent):
                         get_zone_setpoints = '/'.join([topic_group_, self.jci_zonetemp_setpoint_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
                         #_log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints JCI get_zone_setpoints is {get_zone_setpoints}')
                     get_zone_setpoints_final.append(get_zone_setpoints) # GET MULTIPLE Zone Temp for this group
+        _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints get_zone_setpoints_final IS {get_zone_setpoints_final}')
         return get_zone_setpoints_final
 
 
@@ -542,38 +594,39 @@ class Roller(Agent):
         '''
 
         if sig_payload == 1 and sig_payload != self.last_payload_sig:
-            self.last_payload_sig = sig_payload
-            self.last_roller_time = get_aware_utc_now()
             _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - "if statement" MORNING MODE GO first RUN!')
             self.morning_mode_go_activate()
+            self.last_roller_time = get_aware_utc_now()
+            self.last_payload_sig = sig_payload
 
 
         elif sig_payload == 1 and (self.last_payload_sig == sig_payload):
             if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
-                self.last_payload_sig = sig_payload
                 _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "elif sig_payload == 1" td good running function!')
                 self.morning_mode_go_activate()
-            else:
+                self.last_roller_time = get_aware_utc_now()
                 self.last_payload_sig = sig_payload
+            else:
                 _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "elif sig_payload == 1" passing waiting for td to clear!')
+                self.last_payload_sig = sig_payload
 
 
         elif sig_payload == 2 and sig_payload != self.last_payload_sig:
-            self.last_payload_sig = sig_payload
-            self.last_roller_time = get_aware_utc_now()
             _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "if statement" AFTERNOON MODE GO first RUN!')
             self.afternoon_mode_go_activate()
+            self.last_roller_time = get_aware_utc_now()
+            self.last_payload_sig = sig_payload
 
 
         elif sig_payload == 2 and (self.last_payload_sig == sig_payload):
             if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
-                self.last_payload_sig = sig_payload
                 _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "elif sig_payload == 2" td good running function!')
                 self.afternoon_mode_go_activate()
-            else:
+                self.last_roller_time = get_aware_utc_now()
                 self.last_payload_sig = sig_payload
+            else:
                 _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "elif sig_payload == 2" passing waiting for td to clear!')
-
+                self.last_payload_sig = sig_payload
 
         else:
             _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** -  "else statement" NO DR EVENT SIG == 0!')
@@ -697,6 +750,7 @@ class Roller(Agent):
                 # initial first run needs to include OCCs as well as heat disabled
                 final_rpc_data = bacnet_override + occ_override_adjust + occ_override_release + disable_vav_reheat
 
+
             else:
                 # else we are just overriding zones per selected group
                 final_rpc_data = bacnet_override + occ_override_adjust
@@ -814,6 +868,7 @@ class Roller(Agent):
 
                 final_bacnet_release.append((self.ahu_topic_occ, None))
                 final_bacnet_release.append((self.ahu_topic_damper, None))
+
 
                 # disable reheat valves on all JCI VAV boxes
                 _log.debug(f'*** [Roller Agent INFO] *** -  Going to try and loop thru and set all JCI VAVs to cooling only!')
