@@ -66,9 +66,9 @@ class Roller(Agent):
         "jci_system_mode_topic": "SYSTEM-MODE",
         "znt_scoring_setpoint": "72",
         "load_shed_cycles": "1",
-        "load_shifting_cycle_time_seconds": "300",
-        "afternoon_mode_zntsp_adjust": "0.3",
-        "morning_mode_zntsp_adjust": "-0.3"
+        "load_shifting_cycle_time_seconds": "1800",
+        "afternoon_mode_zntsp_adjust": "3.0",
+        "morning_mode_zntsp_adjust": "-3.0"
         }
 
 
@@ -118,13 +118,15 @@ class Roller(Agent):
         # if AHU is off (2) BACnet write to 1
         # to make the AHU GO. Same for VAV boxes
         self.ahu_occ_status = 2
-
+        self.ahu_off = 2
+        self.ahu_on = 1
 
         # metrics used to sift thru zones
         # and calculate scores, etc.
         self.ahu_morning_mode_go = False
         self.afternoon_bacnet_final_release = False
         self.morning_bacnet_final_release = False  
+        self.end_of_day_bacnet_final_release = False
         self.afternoon_mode_complete = False
         self.afternoon_load_shed_topped = False
         self.afternoon_load_shed_bottomed = False
@@ -137,8 +139,6 @@ class Roller(Agent):
         self.morning_pre_cool_hour_complete = False
         self.morning_pre_cool_hour_passes = 0
         self.set_shed_counts_to_one = False
-        self.ahu_off = 2
-        self.ahu_on = 1
         self.last_roller_time = None
         self.last_payload_sig = None
 
@@ -562,8 +562,8 @@ class Roller(Agent):
         #self.core.periodic(self.load_shifting_cycle_time_seconds, self.afternoon_mode_go_activate)
         #self.core.periodic(self.load_shifting_cycle_time_seconds, self.morning_mode_go_activate)
         self.core.periodic(60, self.dr_signal_checker)
-        _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every {self.load_shifting_cycle_time_seconds} seconds')
-
+        _log.debug(f'*** [Roller Agent INFO] *** -  PERIODIC called every 60 seconds')
+        _log.debug(f'*** [Roller Agent INFO] *** -  load_shifting_cycle_time_seconds is {self.load_shifting_cycle_time_seconds} seconds')
 
     def dr_signal_checker(self):
         try:
@@ -612,7 +612,7 @@ class Roller(Agent):
 
 
         elif sig_payload == 2 and sig_payload != self.last_payload_sig:
-            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - MORNING "if statement" AFTERNOON MODE GO first RUN!')
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "if statement" MODE GO first RUN!')
             self.afternoon_mode_go_activate()
             self.last_roller_time = get_aware_utc_now()
             self.last_payload_sig = sig_payload
@@ -626,6 +626,65 @@ class Roller(Agent):
                 self.last_payload_sig = sig_payload
             else:
                 _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - AFTERNOON "elif sig_payload == 2" passing waiting for td to clear!')
+                self.last_payload_sig = sig_payload
+
+        # load_shed_all_zones_go
+        # load shed demand response, drop as much load as possible no rolling
+        elif sig_payload == 3 and sig_payload != self.last_payload_sig:
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - load_shed_all_zones_go "if statement" MODE GO first RUN!')
+            self.load_shed_all_zones_go()
+            self.last_roller_time = get_aware_utc_now()
+            self.last_payload_sig = sig_payload
+
+
+        elif sig_payload == 3 and (self.last_payload_sig == sig_payload):
+            if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - load_shed_all_zones_go  "elif sig_payload == 3" td good running function!')
+                self.end_of_day_final_bacnet_release()
+                self.last_roller_time = get_aware_utc_now()
+                self.last_payload_sig = sig_payload
+            else:
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - load_shed_all_zones_go  "elif sig_payload == 3" passing waiting for td to clear!')
+                self.last_payload_sig = sig_payload
+
+
+        # end_of_day_final_bacnet_release
+        # middle of the night release all VOLTTRON BAS bacnet overrides, can also be used as an event cancel
+        elif sig_payload == 4 and sig_payload != self.last_payload_sig:
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - end_of_day_final_bacnet_release "if statement" MODE GO first RUN!')
+            self.end_of_day_final_bacnet_release()
+            self.last_roller_time = get_aware_utc_now()
+            self.last_payload_sig = sig_payload
+
+
+        elif sig_payload == 4 and (self.last_payload_sig == sig_payload):
+            if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - end_of_day_final_bacnet_release  "elif sig_payload == 4" td good running function!')
+                self.end_of_day_final_bacnet_release()
+                self.last_roller_time = get_aware_utc_now()
+                self.last_payload_sig = sig_payload
+            else:
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - end_of_day_final_bacnet_release  "elif sig_payload == 4" passing waiting for td to clear!')
+                self.last_payload_sig = sig_payload
+
+
+        # midnight_reset_all_params
+        # middle of the night reset params for next day
+        elif sig_payload == 5 and sig_payload != self.last_payload_sig:
+            _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - midnight_reset_all_params "if statement" MODE GO first RUN!')
+            self.midnight_reset_all_params()
+            self.last_roller_time = get_aware_utc_now()
+            self.last_payload_sig = sig_payload
+
+
+        elif sig_payload == 5 and (self.last_payload_sig == sig_payload):
+            if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - midnight_reset_all_params  "elif sig_payload == 5" td good running function!')
+                self.midnight_reset_all_params()
+                self.last_roller_time = get_aware_utc_now()
+                self.last_payload_sig = sig_payload
+            else:
+                _log.debug(f'*** [Roller Agent SIG CHECKER INFO] *** - midnight_reset_all_params  "elif sig_payload == 5" passing waiting for td to clear!')
                 self.last_payload_sig = sig_payload
 
         else:
@@ -765,9 +824,10 @@ class Roller(Agent):
 
             self.morning_pre_cool_hour_passes += 1
             _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_passes += 1')
+            _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_passes is {self.morning_pre_cool_hour_passes}')
 
             # NEED TO ADD IN SOME EXTRA LOGIC HERE ABOUT CALCULATING PASSES
-            if self.morning_pre_cool_hour_passes == 4:
+            if self.morning_pre_cool_hour_passes == 2:
                 self.morning_pre_cool_hour_complete = True
                 _log.debug(f'*** [Roller Agent INFO] *** -  self.morning_pre_cool_hour_complete')
 
@@ -869,9 +929,12 @@ class Roller(Agent):
                 final_bacnet_release.append((self.ahu_topic_occ, None))
                 final_bacnet_release.append((self.ahu_topic_damper, None))
 
+                '''
+
+                code for releasing VAV boxes to heat has been moved to end_of_day release
 
                 # disable reheat valves on all JCI VAV boxes
-                _log.debug(f'*** [Roller Agent INFO] *** -  Going to try and loop thru and set all JCI VAVs to cooling only!')
+                _log.debug(f'*** [Roller Agent INFO] *** -  Going to try and loop thru and set all JCI VAVs to SYS MODE to None!')
                 release_vav_reheat_override = []
                 for group in self.nested_group_map:
                     for zones, bacnet_id in self.nested_group_map[group].items():
@@ -885,6 +948,7 @@ class Roller(Agent):
 
                 final_bacnet_release = final_bacnet_release + release_vav_reheat_override
                 _log.debug(f'*** [Roller Agent INFO] *** -  release_vav_reheat_override added to final_bacnet_release {final_bacnet_release}')
+                '''
 
                 rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
                 _log.debug(f'*** [Setter Agent INFO] *** -  morning mode final_bacnet_release is result {rpc_result}!')
@@ -978,7 +1042,7 @@ class Roller(Agent):
         elif self.afternoon_load_shed_topped == True and self.afternoon_mode_complete == False:
 
             # if TRUE start counting down
-            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG NEED TO DO A FINAL BACnet RELEASE and set shed counts back to zero')
+            _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DEBUGG NEED TO DO A FINAL BACnet RELEASE and set shed counts back to zero on next pass')
 
             for group in self.nested_group_map:
                 group_map = self.nested_group_map[group]
@@ -987,6 +1051,7 @@ class Roller(Agent):
                         group_map[k] = 0
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode shed count should be all zero check nested_group_map: {self.nested_group_map}')
 
+            self.afternoon_mode_complete = True
 
 
         else: 
@@ -1009,16 +1074,16 @@ class Roller(Agent):
 
                 final_bacnet_release.append((self.ahu_topic_occ, None))
                 final_bacnet_release.append((self.ahu_topic_damper, None))
+
                 rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
                 _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_bacnet_release is result {rpc_result}!')
-
+                self.afternoon_bacnet_final_release = True
 
             self.ahu_afternoon_mode_go = False
-            self.afternoon_bacnet_final_release = True
             _log.debug(f'*** [Roller Agent INFO] *** -  afternoon mode DONE DEAL WE SHOULD BE ALL RESET NOW!')
 
 
-
+    # a number 3 from flask app
     def load_shed_all_zones_go(self):
         _log.debug(f'*** [Roller Agent INFO] *** -  morning mode STARTING load_shed_all_zones_go FUNCTION!')
 
@@ -1042,6 +1107,84 @@ class Roller(Agent):
         _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode final_rpc_data is {final_rpc_data}!')
         _log.debug(f'*** [Setter Agent INFO] *** -  afternoon mode rpc_result is {rpc_result}!')
         '''
+
+    # a number 4 from flask app
+    def end_of_day_final_bacnet_release(self):
+
+        if self.end_of_day_bacnet_final_release == False:
+            _log.debug(f'*** [Roller Agent INFO] *** -  END OF DAY looks like we need to BACnet release!')
+            
+            all_zones = ['group_l1n', 'group_l1s', 'group_l2n', 'group_l2s']
+            self.schedule_for_actuator(all_zones)
+            _log.debug(f'*** [Roller Agent INFO] *** -  END OF DAY schedule_for_actuator success!')
+
+
+            final_bacnet_release = []
+            for group in self.nested_group_map:
+                for zones, bacnet_id in self.nested_group_map[group].items():
+                    if zones not in ('score', 'shed_count'):
+                        topic = '/'.join([self.building_topic, bacnet_id])
+                        if int(bacnet_id) > 10000: # its a trane controller
+                            final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
+                        else:
+                            final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV
+
+            final_bacnet_release.append((self.ahu_topic_occ, None))
+            final_bacnet_release.append((self.ahu_topic_damper, None))
+
+
+            # disable reheat valves on all JCI VAV boxes
+            _log.debug(f'*** [Roller Agent INFO] *** -  END OF DAY loop thru and set all JCI VAVs to SYS MODE to None!')
+            release_vav_reheat_override = []
+            for group in self.nested_group_map:
+                for zones, bacnet_id in self.nested_group_map[group].items():
+                    if zones not in ('score', 'shed_count'):
+                        topic = '/'.join([self.building_topic, bacnet_id])
+                        if int(bacnet_id) > 10000: # its a trane controller
+                            pass
+                        else:
+                            final_topic = '/'.join([topic, self.jci_system_mode_topic])
+                            release_vav_reheat_override.append((final_topic, None)) # JCI VAV reheat disabled
+
+            final_bacnet_release = final_bacnet_release + release_vav_reheat_override
+            _log.debug(f'*** [Roller Agent INFO] *** -  release_vav_reheat_override added to final_bacnet_release {final_bacnet_release}')
+
+
+            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+            _log.debug(f'*** [Setter Agent INFO] *** -  END OF DAY release_vav_reheat_override rpc_result result {rpc_result}!')
+            _log.debug(f'*** [Roller Agent INFO] *** -  END OF DAY release_vav_reheat_override {release_vav_reheat_override}')
+            self.end_of_day_bacnet_final_release = True
+
+
+        else:
+            _log.debug(f'*** [Roller Agent INFO] *** -  END OF DAY passing on the "else" self.end_of_day_bacnet_final_release == False!')
+
+
+    # a number 5 from flask app
+    def midnight_reset_all_params(self):
+        _log.debug(f'*** [Roller Agent INFO] *** -  midnight_reset_all_params FUNCTION! GO')
+
+        self.ahu_morning_mode_go = False
+        self.afternoon_bacnet_final_release = False
+        self.morning_bacnet_final_release = False  
+        self.end_of_day_bacnet_final_release = False
+        self.afternoon_mode_complete = False
+        self.afternoon_load_shed_topped = False
+        self.afternoon_load_shed_bottomed = False
+        self.ahu_afternoon_mode_go = False
+        self.morning_load_shed_topped = False
+        self.morning_mode_complete = False
+        self.morning_mode_final_release = False
+        self.morning_load_shed_bottomed = False
+        self.morning_inital_unnoc_sweep = False
+        self.morning_pre_cool_hour_complete = False
+        self.morning_pre_cool_hour_passes = 0
+        self.set_shed_counts_to_one = False
+
+        _log.debug(f'*** [Roller Agent INFO] *** -  midnight_reset_all_params SUCCESS')
+
 
 
     @RPC.export
