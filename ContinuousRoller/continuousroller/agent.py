@@ -77,9 +77,9 @@ class Continuousroller(Agent):
         self.ahu_occ_topic = "slipstream_internal/slipstream_hq/1100/Occupancy Request"
         self.ahu_damper_topic = "slipstream_internal/slipstream_hq/1100/Outdoor Air Damper Command"
         self.ahu_clg_pid_topic = "slipstream_internal/slipstream_hq/1100/Cooling Capacity Status"
-        self.kw_pv_topic = "slipstream_internal/slipstream_hq/5231/REGCHG total_power"
+        self.kw_main_topic = "slipstream_internal/slipstream_hq/5231/REGCHG total_power"
         self.kw_rtu_topic = "slipstream_internal/slipstream_hq/5232/REGCHG total_rtu_power"
-        self.kw_main_topic = "slipstream_internal/slipstream_hq/5240/REGCHG Generation"
+        self.kw_pv_topic = "slipstream_internal/slipstream_hq/5240/REGCHG Generation"
 
         self.jci_zonetemp_topic = "ZN-T"
         self.trane_zonetemp_topic = "Space Temperature Local"
@@ -90,19 +90,20 @@ class Continuousroller(Agent):
         self.jci_system_mode_topic = "SYSTEM-MODE"
         self.znt_scoring_setpoint = 72
         self.load_shed_cycles = 1
-        self.load_shifting_cycle_time_seconds = 1800
-        self.afternoon_mode_zntsp_adjust = 3.0
-        self.morning_mode_zntsp_adjust = -3.0
+        self.load_shifting_cycle_time_seconds = 120
+        self.afternoon_mode_zntsp_adjust = .30
+        self.morning_mode_zntsp_adjust = -.30
 
         self.pv_generation_kw_last_hour = []
-        self.main_meter_kw_last_hour = []
-        self.rtu_meter_kw_last_hour = []
+        self.main_meter_kw_current = None
+        self.rtu_meter_kw_last_current = None
         self.ahu_clg_pid_value = None
         self.todays_high_oatemp = None
         self.todays_avg_oatemp = None
         self.todays_low_oatemp = None
         self.weather_has_been_retrieved = False
         self.clear_kw_values = False
+        self.release_bas = False
         self.last_roller_time = get_aware_utc_now()
 
         # BACnet devices/groups data structure
@@ -208,16 +209,6 @@ class Continuousroller(Agent):
         pass
 
 
-    def get_group_temps(self,group_name):
-        temps = []
-        for key,value in self.nested_group_map[group_name].items():
-            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps key is {key}')
-            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! value is {value}')
-            if key not in ('score','shed_count'):
-                temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
-        #_log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
-        return temps
-
 
     # used on morning mode when agent needs to override occupancy of VAV boxes
     # returns a list converted from zone temp setpoint to occ BAS points of the VAV boxes
@@ -284,23 +275,6 @@ class Continuousroller(Agent):
                             #print(f"found in {group}")
                             return True
         return False
-
-
-
-    # this method call get_group_temps
-    def score_groups(self):
-        for key in self.nested_group_map:
-            #_log.debug(f'*** [Roller Agent INFO] *** - score_groups key is {key}!')
-            group_temps = self.get_group_temps(key)
-            #_log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
-            empty_list_checker = None in group_temps
-            if empty_list_checker:
-                _log.debug(f'*** [Roller Agent INFO] *** - score_groups NoneType Found!')
-            else:
-                #self.nested_group_map[key]['score'] = self.znt_scoring_setpoint - sum(group_temps)/len(group_temps)
-                self.nested_group_map[key]['score'] = 0
-                _log.debug(f'*** [Roller Agent INFO] *** - score_groups SUCCESS!')
-            _log.debug(f'*** [Roller Agent INFO] *** - def score_groups group_temps is {group_temps}')
 
 
 
@@ -402,6 +376,18 @@ class Continuousroller(Agent):
             return False
 
 
+    def after_four_time_bas_release_checker(self):
+        current_hour = self.correct_time_hour()
+        is_5PM = current_hour == 17
+        _log.debug(f'[Conninuous Roller Agent INFO] - after_four_time_bas_release_checker Hour is {current_hour}')
+
+        if is_5PM and self.release_bas == False:
+            _log.debug(f'[Conninuous Roller Agent INFO] - ten_to_four_time_checker Hour is True')
+            return True
+        else:
+            _log.debug(f'[Conninuous Roller Agent INFO] - ten_to_four_time_checker Hour is False')
+            return False
+
     # appending data to an array for kW eGauge data
     # this is to keep array for current hour only
     def check_list_size(self, arr):
@@ -486,9 +472,6 @@ class Continuousroller(Agent):
 
             if self.clear_kw_values == False:
                 self.pv_generation_kw_last_hour.clear()
-                self.main_meter_kw_last_hour.clear()
-                self.rtu_meter_kw_last_hour.clear()
-
                 self.clear_kw_values = True
 
 
@@ -520,24 +503,28 @@ class Continuousroller(Agent):
 
 
                 if data == self.kw_rtu_topic:
-                    self.rtu_meter_kw_last_hour.append(value)
-                    self.rtu_meter_kw_last_hour = self.check_list_size(self.rtu_meter_kw_last_hour)
-                    _log.debug(f'[Conninuous Roller Agent INFO] - rtu_meter_kw_last_hour is {self.rtu_meter_kw_last_hour}!')
+                    self.rtu_meter_kw_last_current = value
+                    _log.debug(f'[Conninuous Roller Agent INFO] - rtu_meter_kw_last_current is {self.rtu_meter_kw_last_current}!')
 
 
                 if data == self.kw_main_topic:
-                    self.main_meter_kw_last_hour.append(value)
-                    main_meter_kw_current = value
-                    self.main_meter_kw_last_hour = self.check_list_size(self.main_meter_kw_last_hour)
-                    _log.debug(f'[Conninuous Roller Agent INFO] - main_meter_kw_last_hour is {self.main_meter_kw_last_hour}!')
+                    self.main_meter_kw_current = value
+                    _log.debug(f'[Conninuous Roller Agent INFO] - main_meter_kw_last_current is {self.main_meter_kw_current}!')
 
-            _log.debug(f'[Conninuous Roller Agent INFO] - current main meter watts is {main_meter_kw_current}!')
+            _log.debug(f'[Conninuous Roller Agent INFO] - current main meter watts is {self.main_meter_kw_current}!')
+            _log.debug(f'[Conninuous Roller Agent INFO] - current main meter kW is {self.main_meter_kw_current/1000}!')
 
             pv_min_last_hour = min(self.pv_generation_kw_last_hour)
             _log.debug(f'[Conninuous Roller Agent INFO] - last hour PV min watts is {pv_min_last_hour}!')
+            _log.debug(f'[Conninuous Roller Agent INFO] - last hour PV min kW is {pv_min_last_hour/1000}!')
 
+            building_kw_minus_pv_min = round(self.main_meter_kw_current/1000 - pv_min_last_hour/1000)
+            _log.debug(f'[Conninuous Roller Agent INFO] - setpoint_calc rounded is {building_kw_minus_pv_min} kW') 
 
-            if (main_meter_kw_current/1000) - (pv_min_last_hour/1000) > self.building_kw_spt:
+            setpoint_calc_boolean = building_kw_minus_pv_min > self.building_kw_spt 
+            _log.debug(f'[Conninuous Roller Agent INFO] - The Boolean is {setpoint_calc_boolean}')
+
+            if setpoint_calc_boolean:
                 _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO SHED A ZONE!')
                 
                 if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
@@ -545,7 +532,6 @@ class Continuousroller(Agent):
                     # if all zone shed counts == 1, pass because all zones have been selected
                     if not self.cycle_checker(1):
 
-                        self.score_groups()
                         shed_zones = self.get_shed_group()
                         shed_this_zone = shed_zones[0]
                         _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED ZONES: {shed_zones}')        
@@ -595,11 +581,11 @@ class Continuousroller(Agent):
 
                         final_rpc_data = bacnet_override + bacnet_release
 
-                        '''
+
                         rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
                         _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode final_rpc_data is {final_rpc_data}!')
                         _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode rpc_result is {rpc_result}!')
-                        '''
+
 
                         zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
 
@@ -639,8 +625,8 @@ class Continuousroller(Agent):
                                     bacnet_release.append((final_topic, None))
 
 
-                        #rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, bacnet_release).get(timeout=90)
-                        #_log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode bacnet_release is result {rpc_result}!')
+                        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, bacnet_release).get(timeout=90)
+                        _log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode bacnet_release is result {rpc_result}!')
 
 
                         # Move this code to end after RPC call to UNOC the Zones
@@ -661,11 +647,43 @@ class Continuousroller(Agent):
 
 
 
+        elif self.after_four_time_bas_release_checker():
+            _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC after_four_time_bas_release_checker TRUE')
+            self.release_bas = True
+
+            # set shed counts back to zero for tomorrow
+            for group in self.nested_group_map:
+                group_map = self.nested_group_map[group]
+                for k, v in group_map.items():
+                    if k in ('shed_count'):
+                        group_map[k] = 0
+            _log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode shed count should be all zero check nested_group_map: {self.nested_group_map}')
 
 
+            final_bacnet_release = []
+            for group in self.nested_group_map:
+                for zones, bacnet_id in self.nested_group_map[group].items():
+                    if zones not in ('score', 'shed_count'):
+                        topic = '/'.join([self.building_topic, bacnet_id])
+                        if int(bacnet_id) > 10000: # its a trane controller
+                            final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
+                        else:
+                            final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                            final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN JCI VAV
+
+            #final_bacnet_release.append((self.ahu_topic_occ, None))
+
+            rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+            _log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode final_bacnet_release is result {rpc_result}!')
+            self.afternoon_bacnet_final_release = True
+
+
+        # reset params in the middle of the night
         elif self.reset_params_time_checker():
             self.weather_has_been_retrieved = False
             self.clear_kw_values = False
+            self.release_bas = False
             _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC reset_params_time_checker TRUE')
 
 
@@ -691,9 +709,9 @@ class Continuousroller(Agent):
 
         _log.debug(f'[Conninuous Roller Agent INFO] - AGENT ONSTART CALL!')
 
-
-        self.core.periodic(300, self.to_do_checker)
-        _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC called every 300 seconds')
+        periodic_seconds_param = 60
+        self.core.periodic(periodic_seconds_param, self.to_do_checker)
+        _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC called every {periodic_seconds_param} seconds')
         _log.debug(f'[Conninuous Roller Agent INFO] - weather GPS setup for lat={self.lat} and lon={self.lon}')
         _log.debug(f'[Conninuous Roller Agent INFO] - Building kW setpoint is {self.building_kw_spt}')
 
