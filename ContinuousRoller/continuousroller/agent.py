@@ -34,9 +34,9 @@ def continuousroller(config_path, **kwargs):
     """
     try:
         config = utils.load_config(config_path)
-        _log.debug(f'*** [Roller Agent INFO] *** -  config Load SUCESS')
+        _log.debug(f'[Conninuous Roller Agent INFO] - config Load SUCESS')
     except Exception:
-        _log.debug(f'*** [Roller Agent INFO] *** -  config Load FAIL')
+        _log.debug(f'[Conninuous Roller Agent INFO] - config Load FAIL')
 
         config = {}
 
@@ -59,7 +59,7 @@ class Continuousroller(Agent):
                 "api_key" : "6f1efece8acf334b0af1ec3538846065",
                 "lat" : "43.0731",
                 "lon" : "-89.4012",
-                "building_kw_spt" : "80"
+                "building_kw_spt" : "50"
         }
 
         api_key = str(self.default_config["api_key"])
@@ -208,6 +208,25 @@ class Continuousroller(Agent):
         pass
 
 
+    def get_group_temps(self,group_name):
+        temps = []
+        for key,value in self.nested_group_map[group_name].items():
+            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps key is {key}')
+            # _log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! value is {value}')
+            if key not in ('score','shed_count'):
+                temps.append(self.znt_values[f'devices/slipstream_internal/slipstream_hq/{value}'])
+        #_log.debug(f'*** [Roller Agent INFO] *** - get_group_temps SUCCESS! temps is {temps}')
+        return temps
+
+
+    # used on morning mode when agent needs to override occupancy of VAV boxes
+    # returns a list converted from zone temp setpoint to occ BAS points of the VAV boxes
+    def zntsp_occ_converter(self,device_list):
+        for i in range(len(device_list)):
+            device_list[i] = device_list[i].replace('ZN-SP', 'OCC-SCHEDULE')
+            device_list[i] = device_list[i].replace('Space Temperature Setpoint BAS', 'Occupancy Request')
+        return device_list
+
 
     def schedule_for_actuator(self,groups):
         # create start and end timestamps
@@ -217,7 +236,7 @@ class Continuousroller(Agent):
         str_end = format_timestamp(_end)
         schedule_request = []
         # wrap the topic and timestamps up in a list and add it to the schedules list
-        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR DEBUG GROUP IS {groups}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - ACTUATOR DEBUG GROUP IS {groups}')
         for group in groups:
             for key,value in self.nested_group_map[group].items():
                 if key not in ('score','shed_count'):
@@ -225,7 +244,7 @@ class Continuousroller(Agent):
                     schedule_request.append([topic_sched_group_l1n, str_start, str_end])
         # send the request to the actuator
         result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR SCHEDULE EVENT SUCESS {result}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - ACTUATOR SCHEDULE EVENT SUCESS {result}')
         
 
     # get multiple data rpc call to retrieve all zone temp setpoints
@@ -233,10 +252,10 @@ class Continuousroller(Agent):
     def rpc_get_mult_setpoints(self,groups):
         get_zone_setpoints_final = []
         schedule_request = self.schedule_for_actuator(groups)
-        #_log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
+        #_log.debug(f'[Conninuous Roller Agent INFO] - rpc_get_mult_setpoints DEBUG schedule_request IS {schedule_request}')
         # call schedule actuator agent from different method
         for group in groups:
-            #_log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints DEBUG GROUP IS {group}')
+            #_log.debug(f'[Conninuous Roller Agent INFO] - rpc_get_mult_setpoints DEBUG GROUP IS {group}')
             for key,value in self.nested_group_map[group].items():
                 if key not in ('score','shed_count'):
                     topic_group_ = '/'.join([self.building_topic, str(value)])
@@ -248,7 +267,7 @@ class Continuousroller(Agent):
                         get_zone_setpoints = '/'.join([topic_group_, self.jci_zonetemp_setpoint_topic]) # BACNET RELEASE OCC POINT IN JCI VAV
                         #_log.debug(f'*** [Roller Agent INFO] *** DEBUG rpc_get_mult_setpoints JCI get_zone_setpoints is {get_zone_setpoints}')
                     get_zone_setpoints_final.append(get_zone_setpoints) # GET MULTIPLE Zone Temp for this group
-        _log.debug(f'*** [Roller Agent INFO] *** -  rpc_get_mult_setpoints get_zone_setpoints_final IS {get_zone_setpoints_final}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - rpc_get_mult_setpoints get_zone_setpoints_final IS {get_zone_setpoints_final}')
         return get_zone_setpoints_final
 
 
@@ -295,11 +314,11 @@ class Continuousroller(Agent):
         add in some extra logic to call same group more than once is score is ideal
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1])
-        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group sorted_groups is {sorted_groups}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - DEBUGG get_shed_group sorted_groups is {sorted_groups}')
 
         #sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
         sorted_list = [sorted_group[0] for sorted_group in sorted_groups]
-        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - DEBUGG sorted_dict is {sorted_list}')
         return sorted_list
 
 
@@ -315,11 +334,11 @@ class Continuousroller(Agent):
         '''
         sorted_groups = sorted(avail_groups,key = lambda x: x[1], reverse=True)
         #sorted_groups = sorted(avail_groups,key = lambda x: x[1])
-        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG get_shed_group sorted_groups is {sorted_groups}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - DEBUGG get_shed_group sorted_groups is {sorted_groups}')
 
         #sorted_list = [sorted_groups[0][0],sorted_groups[1][0],sorted_groups[2][0],sorted_groups[3][0]]
         sorted_list = [sorted_group[0] for sorted_group in sorted_groups]
-        _log.debug(f'*** [Roller Agent INFO] *** -  DEBUGG sorted_dict is {sorted_list}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - DEBUGG sorted_dict is {sorted_list}')
         return sorted_list
 
 
@@ -330,7 +349,7 @@ class Continuousroller(Agent):
             for k,v in self.nested_group_map[group].items():
                 if k in ('shed_count'):
                     check_sum.append(int(v))
-        _log.debug(f'*** [Roller Agent INFO] *** -  cycle_checker appended is {check_sum}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - cycle_checker appended is {check_sum}')
         # returns boolean
         return sum(check_sum) == len(check_sum) * cycles
 
@@ -435,6 +454,7 @@ class Continuousroller(Agent):
     def to_do_checker(self):
         if self.weather_time_checker() and self.weather_has_been_retrieved == False:
             _log.debug(f'[Conninuous Roller Agent INFO] - weather_needs_to_checked TRUE')
+
             try:
                 url = f"https://api.openweathermap.org/data/2.5/onecall?lat={self.lat}&lon={self.lat}&exclude=minutely&appid={self.api_key}&units=imperial"
                 requests = (grequests.get(url),)
@@ -528,27 +548,60 @@ class Continuousroller(Agent):
                         self.score_groups()
                         shed_zones = self.get_shed_group()
                         shed_this_zone = shed_zones[0]
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT UP SHED ZONES: {shed_zones}')        
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT UP SHED THIS ZONE: {shed_this_zone}')   
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED ZONES: {shed_zones}')        
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED THIS ZONE: {shed_this_zone}')   
 
 
                         zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
                         zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_data values is {zone_setpoints_data}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode zone_setpoints_data values is {zone_setpoints_data}')
 
 
                         # morning mode these same list results are converted for occupancy VAV box points as well
                         # convert from zone temp setpoint to occupancy for rpc on zntsp_occ_converter method used further below
                         adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode adjust_zones values is {adjust_zones}')
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode release_zones values is {release_zones}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode adjust_zones values is {adjust_zones}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode release_zones values is {release_zones}')
 
 
                         # ADD a 1 to the zone that was shed for memory on algorithm calculation
                         self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode shed_counter +1 SUCCESS on group {shed_this_zone}')
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.nested_group_map is {self.nested_group_map}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode shed_counter +1 SUCCESS on group {shed_this_zone}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode self.nested_group_map is {self.nested_group_map}')
 
+
+                        #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
+                        new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,self.afternoon_mode_zntsp_adjust)
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+
+
+                        # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+                        bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_override is {bacnet_override}!')
+
+
+                        # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+                        none_list = []
+                        for i in range(len(release_zones)):
+                            none_list.append(None)
+
+
+                        bacnet_release = list(self.merge(release_zones,none_list))
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_release is {bacnet_release}!')
+
+
+                        final_rpc_data = bacnet_override + bacnet_release
+
+                        '''
+                        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode final_rpc_data is {final_rpc_data}!')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode rpc_result is {rpc_result}!')
+                        '''
+
+                        zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
 
                         _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS SHEDED SUCCESS!')
 
@@ -561,7 +614,7 @@ class Continuousroller(Agent):
                     _log.debug(f'[Conninuous Roller Agent INFO] - SHED Side Passing waiting to td to clear')
 
             else:
-                _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO DE-SHED A ZONE!')
+                _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO RELEASE A ZONE!')
 
                 if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
 
@@ -570,25 +623,31 @@ class Continuousroller(Agent):
                         self.score_groups()
                         release_zones = self.get_release_group()
                         release_this_zone = release_zones[0]
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT DOWN RELEASE ZONES: {release_zones}')        
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
+                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE ZONES: {release_zones}')        
+                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
 
 
-                        zone_setpoints = self.rpc_get_mult_setpoints(release_zones)
-                        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode zone_setpoints_data values is {zone_setpoints_data}')
+                        bacnet_release = []
+                        for zones, bacnet_id in self.nested_group_map[release_this_zone].items():
+                            if zones not in ('score', 'shed_count'):
+                                topic = '/'.join([self.building_topic, bacnet_id])
+                                if int(bacnet_id) > 10000: # its a trane controller
+                                    final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                                    bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
+                                else:
+                                    final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                                    bacnet_release.append((final_topic, None))
 
 
-                        adjust_zones,release_zones = self.rpc_data_splitter(release_this_zone,zone_setpoints_data)
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode adjust_zones values is {adjust_zones}')
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode release_zones values is {release_zones}')
+                        #rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, bacnet_release).get(timeout=90)
+                        #_log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode bacnet_release is result {rpc_result}!')
 
 
                         # Move this code to end after RPC call to UNOC the Zones
                         # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
                         self.nested_group_map[release_this_zone]['shed_count'] = self.nested_group_map[release_this_zone]['shed_count'] - 1
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode shed_counter -1 SUCCESS on group {release_this_zone}')
-                        _log.debug(f'*** [Roller Agent INFO] *** -  morning mode self.nested_group_map is {self.nested_group_map}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode shed_counter -1 SUCCESS on group {release_this_zone}')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode self.nested_group_map is {self.nested_group_map}')
 
                         _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS DESHEDED SUCCESS!')
 
@@ -604,42 +663,15 @@ class Continuousroller(Agent):
 
 
 
-
-
-
-
-            
-
-
-
         elif self.reset_params_time_checker():
             self.weather_has_been_retrieved = False
             self.clear_kw_values = False
             _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC reset_params_time_checker TRUE')
 
+
         else:
             _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC nothing')
 
-
-
-    def schedule_for_actuator(self,groups):
-        # create start and end timestamps
-        _now = get_aware_utc_now()
-        str_start = format_timestamp(_now)
-        _end = _now + td(seconds=10)
-        str_end = format_timestamp(_end)
-        schedule_request = []
-        # wrap the topic and timestamps up in a list and add it to the schedules list
-        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR DEBUG GROUP IS {groups}')
-        for group in groups:
-            for key,value in self.nested_group_map[group].items():
-                if key not in ('score','shed_count'):
-                    topic_sched_group_l1n = '/'.join([self.building_topic, str(value)])
-                    schedule_request.append([topic_sched_group_l1n, str_start, str_end])
-        # send the request to the actuator
-        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
-        _log.debug(f'*** [Roller Agent INFO] *** -  ACTUATOR SCHEDULE EVENT SUCESS {result}')
-        
 
 
 
@@ -662,8 +694,8 @@ class Continuousroller(Agent):
 
         self.core.periodic(300, self.to_do_checker)
         _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC called every 300 seconds')
-
-
+        _log.debug(f'[Conninuous Roller Agent INFO] - weather GPS setup for lat={self.lat} and lon={self.lon}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - Building kW setpoint is {self.building_kw_spt}')
 
 
 
