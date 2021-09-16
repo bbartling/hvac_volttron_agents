@@ -90,7 +90,7 @@ class Continuousroller(Agent):
         self.jci_system_mode_topic = "SYSTEM-MODE"
         self.znt_scoring_setpoint = 72
         self.load_shed_cycles = 1
-        self.load_shifting_cycle_time_seconds = 120
+        self.load_shifting_cycle_time_seconds = 1800
         self.afternoon_mode_zntsp_adjust = .30
         self.morning_mode_zntsp_adjust = -.30
 
@@ -446,6 +446,7 @@ class Continuousroller(Agent):
                 requests = (grequests.get(url),)
                 result, = grequests.map(requests)
                 data = result.json()
+                _log.debug(f'[Conninuous Roller Agent INFO] - openweathermap API data is {data}')
 
                 self.weather_has_been_retrieved = True
 
@@ -709,9 +710,10 @@ class Continuousroller(Agent):
 
         _log.debug(f'[Conninuous Roller Agent INFO] - AGENT ONSTART CALL!')
 
-        periodic_seconds_param = 60
+        periodic_seconds_param = 300
         self.core.periodic(periodic_seconds_param, self.to_do_checker)
         _log.debug(f'[Conninuous Roller Agent INFO] - PERIODIC called every {periodic_seconds_param} seconds')
+        _log.debug(f'[Conninuous Roller Agent INFO] - self.load_shifting_cycle_time_seconds is {self.load_shifting_cycle_time_seconds} seconds')
         _log.debug(f'[Conninuous Roller Agent INFO] - weather GPS setup for lat={self.lat} and lon={self.lon}')
         _log.debug(f'[Conninuous Roller Agent INFO] - Building kW setpoint is {self.building_kw_spt}')
 
@@ -724,7 +726,36 @@ class Continuousroller(Agent):
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.
         """
-        pass
+        _log.debug(f'[Conninuous Roller Agent INFO] - onstop RELEASE BACnet')
+        self.release_bas = True
+
+        # set shed counts back to zero for tomorrow
+        for group in self.nested_group_map:
+            group_map = self.nested_group_map[group]
+            for k, v in group_map.items():
+                if k in ('shed_count'):
+                    group_map[k] = 0
+        _log.debug(f'[Conninuous Roller Agent INFO] - onstop RELEASE BACnet should all be set back to zero nested_group_map: {self.nested_group_map}')
+
+
+        final_bacnet_release = []
+        for group in self.nested_group_map:
+            for zones, bacnet_id in self.nested_group_map[group].items():
+                if zones not in ('score', 'shed_count'):
+                    topic = '/'.join([self.building_topic, bacnet_id])
+                    if int(bacnet_id) > 10000: # its a trane controller
+                        final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                        final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
+                    else:
+                        final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                        final_bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN JCI VAV
+
+        #final_bacnet_release.append((self.ahu_topic_occ, None))
+
+        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
+        _log.debug(f'[Conninuous Roller Agent INFO] - onstop BACnet RELEASE rpc result {rpc_result}!')
+
+
 
     @RPC.export
     def rpc_method(self, arg1, arg2, kwarg1=None, kwarg2=None):
