@@ -1,11 +1,15 @@
 {
 
-  "revertpoint_default": "1",
-  "unnoccupied_value": "2",
+  "url": "http://10.200.200.223:5000/payload/current",
   "building_topic": "slipstream_internal/slipstream_hq",
-  "jci_setpoint_topic": "OCC-SCHEDULE",
-  "trane_setpoint_topic": "Occupancy Request",
   "jci_zonetemp_topic": "ZN-T",
-  "trane_zonetemp_topic": "Space Temperature Local"
+  "trane_zonetemp_topic": "Space Temperature Local",
+  "jci_zonetemp_setpoint_topic": "ZN-SP",
+  "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
+  "jci_occ_topic": "OCC-SCHEDULE",
+  "trane_occ_topic": "Occupancy Request",
+  "jci_system_mode_topic": "SYSTEM-MODE",
+  "dr_event_zntsp_adjust_up": "3.0",
+  "dr_event_zntsp_adjust_down": "-3.0"
 
 }
