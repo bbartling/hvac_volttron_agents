@@ -7,12 +7,14 @@ df = pd.read_excel('slipstream_event_schedule.xlsx', engine='openpyxl', index_co
 post_this_json = df.to_json(orient="index")
 
 
-r = requests.post('http://10.200.200.223:5000/update/data', json=post_this_json)
+r = requests.post('http://10.200.200.224:5000/update/data', json=post_this_json)
 print(r.text)
 
-time.sleep(5)
+time.sleep(30)
 
-r = requests.get('http://10.200.200.223:5000/payload/current')
+
+
+r = requests.get('http://10.200.200.224:5000/payload/current')
 print('Current Payload is: ',r.text)
 
 time.sleep(5)
