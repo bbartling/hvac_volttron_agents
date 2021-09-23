@@ -56,7 +56,7 @@ class Setteroccvav(Agent):
 
 
         self.default_config = {
-        "url": "http://10.200.200.223:5000/payload/current",
+        "url": "http://10.200.200.224:5000/payload/current",
         "building_topic": "slipstream_internal/slipstream_hq",
         "jci_zonetemp_topic": "ZN-T",
         "trane_zonetemp_topic": "Space Temperature Local",
@@ -65,8 +65,8 @@ class Setteroccvav(Agent):
         "jci_occ_topic": "OCC-SCHEDULE",
         "trane_occ_topic": "Occupancy Request",
         "jci_system_mode_topic": "SYSTEM-MODE",
-        "dr_event_zntsp_adjust_up": "3.0",
-        "dr_event_zntsp_adjust_down": "-3.0"
+        "dr_event_zntsp_adjust_up": ".30",
+        "dr_event_zntsp_adjust_down": "-.30"
         }
 
         url = str(self.default_config["url"])
@@ -288,15 +288,14 @@ class Setteroccvav(Agent):
         for group in groups:
             for topic,setpoint in rpc_data[0].items():
                 device_id = topic.split('/')[2]
-                if self.find_zone(device_id,group):
-                    if int(device_id) > 10000: # its a trane controller, celsius
-                        setpoint_new = setpoint + (znt_offset * 5/9)
-                        new_setpoints.append(setpoint_new)
-                        old_setpoints.append(setpoint)
-                    else: # its a jci controller, Fahrenheit
-                        setpoint_new = setpoint + znt_offset
-                        new_setpoints.append(setpoint_new)
-                        old_setpoints.append(setpoint)
+                if int(device_id) > 10000: # its a trane controller, celsius
+                    setpoint_new = setpoint + (znt_offset * 5/9)
+                    new_setpoints.append(setpoint_new)
+                    old_setpoints.append(setpoint)
+                else: # its a jci controller, Fahrenheit
+                    setpoint_new = setpoint + znt_offset
+                    new_setpoints.append(setpoint_new)
+                    old_setpoints.append(setpoint)
         return new_setpoints,old_setpoints
 
 
@@ -308,11 +307,11 @@ class Setteroccvav(Agent):
     def bacnet_release_go(self):
 
         if self.bacnet_releases_complete == False:
-            _log.debug(f'[Simple DR Agent INFO] -  END OF DAY looks like we need to BACnet release!')
+            _log.debug(f'[Simple DR Agent INFO] - END OF DAY looks like we need to BACnet release!')
             
             all_zones = ['group_l1n', 'group_l1s', 'group_l2n', 'group_l2s']
             self.schedule_for_actuator(all_zones)
-            _log.debug(f'[Simple DR Agent INFO] -  END OF DAY schedule_for_actuator success!')
+            _log.debug(f'[Simple DR Agent INFO] - END OF DAY schedule_for_actuator success!')
 
 
             final_bacnet_release = []
@@ -337,20 +336,20 @@ class Setteroccvav(Agent):
                             pass
                         else:
                             final_topic = '/'.join([topic, self.jci_system_mode_topic])
-                            release_vav_reheat_override.append((final_topic, None)) # JCI VAV reheat disabled
+                            release_vav_reheat_override.append((final_topic, None)) # JCI VAV reheat disabled point release
 
             final_bacnet_release = final_bacnet_release + release_vav_reheat_override
             _log.debug(f'[Simple DR Agent INFO] -  release_vav_reheat_override added to final_bacnet_release {final_bacnet_release}')
 
 
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_release).get(timeout=90)
-            _log.debug(f'[Simple DR Agent INFO] -  bacnet release rpc_result result {rpc_result}!')
-            _log.debug(f'[Simple DR Agent INFO] -  bacnet release {release_vav_reheat_override}')
+            _log.debug(f'[Simple DR Agent INFO] - bacnet release rpc_result result {rpc_result}!')
+            _log.debug(f'[Simple DR Agent INFO] - bacnet release {release_vav_reheat_override}')
             self.bacnet_releases_complete = True
 
 
         else:
-            _log.debug(f'[Simple DR Agent INFO] -  bacnet release PASSING!!!')
+            _log.debug(f'[Simple DR Agent INFO] - bacnet release PASSING!!!')
 
 
 
@@ -371,23 +370,21 @@ class Setteroccvav(Agent):
             _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
 
-            '''
-            bacnet_override = list(self.merge(group,new_setpoints_adjust_group))
-            _log.debug(f'[Simple DR Agent INFO] - morning mode bacnet_override is {bacnet_override}!')
-
-
-
-            override_spt_setpoints = []
+            device_path_topics = []
             for group in self.nested_group_map:
                 for zones, bacnet_id in self.nested_group_map[group].items():
                     if zones not in ('score', 'shed_count'):
                         topic = '/'.join([self.building_topic, bacnet_id])
                         if int(bacnet_id) > 10000: # its a trane controller
                             final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
-                            override_spt_setpoints.append((final_topic, None)) # BACNET RELEASE OCC POINT IN TRANE VAV 
+                            device_path_topics.append(final_topic) # BACNET RELEASE OCC POINT IN TRANE VAV 
                         else:
                             final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
-                            override_spt_setpoints.append((final_topic, None)) # BACNET RELEASE OCC POINT IN JCI VAV
+                            device_path_topics.append(final_topic) # BACNET RELEASE OCC POINT IN JCI VAV
+
+
+            bacnet_override_new_setpoints = list(self.merge(device_path_topics,new_setpoints_adjust_group))
+            _log.debug(f'[Simple DR Agent INFO] - morning mode bacnet_override is {bacnet_override_new_setpoints}!')
 
 
             set_vavs_cooling_only = []
@@ -399,17 +396,21 @@ class Setteroccvav(Agent):
                             pass
                         else:
                             final_topic = '/'.join([topic, self.jci_system_mode_topic])
-                            set_vavs_cooling_only.append((final_topic, None)) # JCI VAV reheat disabled
+                            set_vavs_cooling_only.append((final_topic, 1)) # JCI VAV reheat disabled set to 1
 
-            final_bacnet_overrides = override_spt_setpoints + set_vavs_cooling_only
-            _log.debug(f'[Simple DR Agent INFO] -  release_vav_reheat_override added to final_bacnet_release {final_bacnet_overrides}')
+            final_bacnet_overrides = bacnet_override_new_setpoints + set_vavs_cooling_only
+            _log.debug(f'[Simple DR Agent INFO] - release_vav_reheat_override added to final_bacnet_release {final_bacnet_overrides}')
 
 
             rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_bacnet_overrides).get(timeout=90)
-            _log.debug(f'[Simple DR Agent INFO] -  bacnet override rpc_result result {rpc_result}!')
-            _log.debug(f'[Simple DR Agent INFO] -  bacnet override {final_bacnet_overrides}')
+            _log.debug(f'[Simple DR Agent INFO] - bacnet override rpc_result result {rpc_result}!')
+            _log.debug(f'[Simple DR Agent INFO] - bacnet override {final_bacnet_overrides}')
             self.bacnet_overrides_complete = True
-            '''
+
+
+        else:
+            _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go PASSING!!!!')
+
 
 
 
@@ -449,6 +450,10 @@ class Setteroccvav(Agent):
         if sig_payload == 1:
             _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go GO!!!!')
             self.bacnet_override_go()
+
+        elif sig_payload == 2:
+            _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
+            self.bacnet_release_go()
 
         else:
             _log.debug(f'[Simple DR Agent INFO] -  "else statement" NO DR EVENT SIG == 0!')
