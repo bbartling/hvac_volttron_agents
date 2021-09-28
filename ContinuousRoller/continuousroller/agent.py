@@ -90,7 +90,7 @@ class Continuousroller(Agent):
         self.jci_system_mode_topic = "HTG-O"
         self.znt_scoring_setpoint = 72
         self.load_shed_cycles = 1
-        self.load_shifting_cycle_time_seconds = 1800
+        self.load_shifting_cycle_time_seconds = 180
         self.afternoon_mode_zntsp_adjust = 3.0
         self.morning_mode_zntsp_adjust = -3.0
 
@@ -449,7 +449,7 @@ class Continuousroller(Agent):
             _log.debug(f'[Conninuous Roller Agent INFO] - weather_needs_to_checked TRUE')
 
             try:
-                url = f"https://api.openweathermap.org/data/2.5/onecall?lat={self.lat}&lon={self.lat}&exclude=minutely&appid={self.api_key}&units=imperial"
+                url = f"https://api.openweathermap.org/data/2.5/onecall?lat={self.lat}&lon={self.lon}&exclude=minutely&appid={self.api_key}&units=imperial"
                 requests = (grequests.get(url),)
                 result, = grequests.map(requests)
                 data = result.json()
