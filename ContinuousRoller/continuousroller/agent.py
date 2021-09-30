@@ -59,19 +59,22 @@ class Continuousroller(Agent):
                 "api_key" : "6f1efece8acf334b0af1ec3538846065",
                 "lat" : "43.0731",
                 "lon" : "-89.4012",
-                "building_kw_spt" : "50"
+                "building_kw_spt" : "50",
+                "building_kw_deadband" : "10"
         }
 
         api_key = str(self.default_config["api_key"])
         lat = str(self.default_config["lat"])
         lon = str(self.default_config["lon"])
         building_kw_spt = float(self.default_config["building_kw_spt"])
+        building_kw_deadband = float(self.default_config["building_kw_deadband"])
 
         # openweatherman one call api
         self.api_key = api_key
         self.lat = lat
         self.lon = lon
         self.building_kw_spt = building_kw_spt
+        self.building_kw_deadband = building_kw_deadband
 
         self.building_topic = "slipstream_internal/slipstream_hq"
         self.ahu_occ_topic = "slipstream_internal/slipstream_hq/1100/Occupancy Request"
@@ -178,7 +181,7 @@ class Continuousroller(Agent):
             lat = str(config["lat"])
             lon = str(config["lon"])
             building_kw_spt = float(config["building_kw_spt"])
-            
+            building_kw_deadband = float(config["building_kw_deadband"])
 
         except ValueError as e:
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
@@ -188,6 +191,7 @@ class Continuousroller(Agent):
         self.lat = lat
         self.lon = lon
         self.building_kw_spt = building_kw_spt
+        self.building_kw_deadband = building_kw_deadband
 
         #self._create_subscriptions(self.setting2)
 
@@ -442,6 +446,7 @@ class Continuousroller(Agent):
         _log.debug(f'[Conninuous Roller Agent INFO] - self.load_shifting_cycle_time_seconds is {self.load_shifting_cycle_time_seconds} seconds')
         _log.debug(f'[Conninuous Roller Agent INFO] - weather GPS setup for lat={self.lat} and lon={self.lon}')
         _log.debug(f'[Conninuous Roller Agent INFO] - Building kW setpoint is {self.building_kw_spt}')
+        _log.debug(f'[Conninuous Roller Agent INFO] - Building kW deadband is {self.building_kw_deadband}')
 
 
         if self.weather_time_checker() and self.weather_has_been_retrieved == False:
