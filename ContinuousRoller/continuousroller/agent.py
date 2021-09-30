@@ -611,7 +611,9 @@ class Continuousroller(Agent):
                         _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode rpc_result is {rpc_result}!')
 
 
-                        zone_setpoints_check = {f'old setpoints for {shed_this_zone}':old_setpoints_adjust_group,f'new setpoints for {shed_this_zone}':new_setpoints_adjust_group}
+                        zone_setpoints_check = self.rpc_get_mult_setpoints(shed_zones)
+                        zone_setpoints_check_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints_check).get(timeout=90)
+                        _log.debug(f'[Conninuous Roller Agent INFO] - VERIFICATION OF CORRECT SETPOINTS is {zone_setpoints_check_data}')
 
                         _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS SHEDED SUCCESS!')
 
@@ -626,10 +628,18 @@ class Continuousroller(Agent):
             else:
                 _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO RELEASE A ZONE!')
 
+                # not used at the moment
                 if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
 
+                    # factor in a deadband to release a zone or not
+                    release_calc = self.main_meter_kw_current/1000 - self.building_kw_deadband
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode building kW minus deadband is {release_calc}')
+
                     # if shed counts have values pick a zone to shed, else if they are zero just pass
-                    if not self.cycle_checker(0):
+                    release_calc_boolean = release_calc > self.building_kw_spt
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode release_calc_boolean is {release_calc_boolean}')
+
+                    if not self.cycle_checker(0) and release_calc_boolean:
                         #self.score_groups()
                         release_zones = self.get_release_group()
                         release_this_zone = release_zones[0]
@@ -663,7 +673,7 @@ class Continuousroller(Agent):
                         _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS DESHEDED SUCCESS!')
 
                     else:
-                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE DESHED PASS shed_counts == zero!')
+                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE DESHED PASS shed_counts == zero or building kW is within deadband!')
 
                     self.last_roller_time = get_aware_utc_now()
 
@@ -739,9 +749,6 @@ class Continuousroller(Agent):
 
         periodic_seconds_param = 300
         self.core.periodic(periodic_seconds_param, self.to_do_checker)
-
-
-
 
 
     @Core.receiver("onstop")
