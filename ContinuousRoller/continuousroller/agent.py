@@ -59,7 +59,7 @@ class Continuousroller(Agent):
                 "api_key" : "6f1efece8acf334b0af1ec3538846065",
                 "lat" : "43.0731",
                 "lon" : "-89.4012",
-                "building_kw_spt" : "50",
+                "building_kw_spt" : "25",
                 "building_kw_deadband" : "10"
         }
 
@@ -83,6 +83,7 @@ class Continuousroller(Agent):
         self.kw_main_topic = "slipstream_internal/slipstream_hq/5231/REGCHG total_power"
         self.kw_rtu_topic = "slipstream_internal/slipstream_hq/5232/REGCHG total_rtu_power"
         self.kw_pv_topic = "slipstream_internal/slipstream_hq/5240/REGCHG Generation"
+        self.all_zones = ['group_l1n','group_l2n','group_l1s','group_l2s']
 
         self.jci_zonetemp_topic = "ZN-T"
         self.trane_zonetemp_topic = "Space Temperature Local"
@@ -93,7 +94,7 @@ class Continuousroller(Agent):
         self.jci_system_mode_topic = "HTG-O"
         self.znt_scoring_setpoint = 72
         self.load_shed_cycles = 1
-        self.load_shifting_cycle_time_seconds = 180
+        self.load_shifting_cycle_time_seconds = None
         self.afternoon_mode_zntsp_adjust = 3.0
         self.morning_mode_zntsp_adjust = -3.0
 
@@ -492,13 +493,18 @@ class Continuousroller(Agent):
             str_start = format_timestamp(_now)
             _end = _now + td(seconds=10)
             str_end = format_timestamp(_end)
-            peroidic_schedule_request = ["slipstream_internal/slipstream_hq/1100", # AHU
-                                        "slipstream_internal/slipstream_hq/5231", # eGuage Main
-                                        "slipstream_internal/slipstream_hq/5232", # eGuage RTU
-                                        "slipstream_internal/slipstream_hq/5240"] # eGuage PV
+            peroidic_schedule_request_devices = ["slipstream_internal/slipstream_hq/1100", # AHU
+                                                "slipstream_internal/slipstream_hq/5231", # eGuage Main
+                                                "slipstream_internal/slipstream_hq/5232", # eGuage RTU
+                                                "slipstream_internal/slipstream_hq/5240"] # eGuage PV
+
+            schedule_request = []
+            # wrap the topic and timestamps up in a list and add it to the schedules list
+            for device in peroidic_schedule_request_devices:
+                schedule_request.append([device, str_start, str_end])
 
             # send the request to the actuator
-            result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', peroidic_schedule_request).get(timeout=90)
+            result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', schedule_request).get(timeout=90)
             _log.debug(f'[Conninuous Roller Agent INFO] - ACTUATOR SCHEDULE EVENT SUCESS {result}')
 
             meter_data_to_get = [self.ahu_clg_pid_topic,self.kw_pv_topic,self.kw_rtu_topic,self.kw_main_topic]
@@ -531,8 +537,8 @@ class Continuousroller(Agent):
             _log.debug(f'[Conninuous Roller Agent INFO] - last hour PV min watts is {pv_min_last_hour}!')
             _log.debug(f'[Conninuous Roller Agent INFO] - last hour PV min kW is {pv_min_last_hour/1000}!')
 
-            building_kw_minus_pv_min = round(self.main_meter_kw_current/1000 - pv_min_last_hour/1000)
-            _log.debug(f'[Conninuous Roller Agent INFO] - setpoint_calc rounded is {building_kw_minus_pv_min} kW') 
+            #building_kw_minus_pv_min = round(self.main_meter_kw_current/1000 - pv_min_last_hour/1000)
+            #_log.debug(f'[Conninuous Roller Agent INFO] - setpoint_calc rounded is {building_kw_minus_pv_min} kW') 
 
             #setpoint_calc_boolean = building_kw_minus_pv_min > self.building_kw_spt
             setpoint_calc_boolean = self.main_meter_kw_current/1000 > self.building_kw_spt
@@ -541,144 +547,146 @@ class Continuousroller(Agent):
             if setpoint_calc_boolean:
                 _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO SHED A ZONE!')
                 
-                if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
 
-                    # if all zone shed counts == 1, pass because all zones have been selected
-                    if not self.cycle_checker(1):
+                # if all zone shed counts == 1, pass because all zones have been selected
+                if not self.cycle_checker(1):
 
-                        shed_zones = self.get_shed_group()
-                        shed_this_zone = shed_zones[0]
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED ZONES: {shed_zones}')        
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED THIS ZONE: {shed_this_zone}')   
-
-
-                        zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
-                        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode zone_setpoints_data values is {zone_setpoints_data}')
+                    shed_zones = self.get_shed_group()
+                    shed_this_zone = shed_zones[0]
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED ZONES: {shed_zones}')        
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode COUNT UP SHED THIS ZONE: {shed_this_zone}')   
 
 
-                        # morning mode these same list results are converted for occupancy VAV box points as well
-                        # convert from zone temp setpoint to occupancy for rpc on zntsp_occ_converter method used further below
-                        adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode adjust_zones values is {adjust_zones}')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode release_zones values is {release_zones}')
+                    zone_setpoints = self.rpc_get_mult_setpoints(shed_zones)
+                    zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints).get(timeout=90)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode zone_setpoints_data values is {zone_setpoints_data}')
 
 
-                        # ADD a 1 to the zone that was shed for memory on algorithm calculation
-                        self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode shed_counter +1 SUCCESS on group {shed_this_zone}')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode self.nested_group_map is {self.nested_group_map}')
+                    # morning mode these same list results are converted for occupancy VAV box points as well
+                    # convert from zone temp setpoint to occupancy for rpc on zntsp_occ_converter method used further below
+                    adjust_zones,release_zones = self.rpc_data_splitter(shed_this_zone,zone_setpoints_data)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode adjust_zones values is {adjust_zones}')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode release_zones values is {release_zones}')
 
 
-                        #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
-                        new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,self.afternoon_mode_zntsp_adjust)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
+                    # ADD a 1 to the zone that was shed for memory on algorithm calculation
+                    self.nested_group_map[shed_this_zone]['shed_count'] = self.nested_group_map[shed_this_zone]['shed_count'] + 1
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode shed_counter +1 SUCCESS on group {shed_this_zone}')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode self.nested_group_map is {self.nested_group_map}')
 
 
-                        # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
-                        bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_override is {bacnet_override}!')
+                    #get_adjust_zone_setpoints(rpc_data,group,znt_offset)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG zone_setpoints_data is {zone_setpoints_data}')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints DEBUGG shed_this_zone is {shed_this_zone}')
+                    new_setpoints_adjust_group,old_setpoints_adjust_group = self.get_adjust_zone_setpoints(zone_setpoints_data,shed_this_zone,self.afternoon_mode_zntsp_adjust)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints new_setpoints_adjust_group is {new_setpoints_adjust_group}')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode get_adjust_zone_setpoints old_setpoints_adjust_group is {old_setpoints_adjust_group}')
 
 
-                        override_htg_valves = []
-                        for zones, bacnet_id in self.nested_group_map[shed_this_zone].items():
-                            if zones not in ('score', 'shed_count'):
-                                topic = '/'.join([self.building_topic, bacnet_id])
-                                if int(bacnet_id) > 10000: # its a trane controller
-                                    pass 
-                                else:
-                                    final_topic_htg = '/'.join([topic, self.jci_system_mode_topic])
-                                    override_htg_valves.append((final_topic_htg, 0)) # override reheat valve to zero %
+                    # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+                    bacnet_override = list(self.merge(adjust_zones,new_setpoints_adjust_group))
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_override is {bacnet_override}!')
 
 
-                        # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
-                        none_list = []
-                        for i in range(len(release_zones)):
-                            none_list.append(None)
-
-                        bacnet_release = list(self.merge(release_zones,none_list))
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_release is {bacnet_release}!')
-
-
-                        final_rpc_data = bacnet_override + override_htg_valves + bacnet_release
-
-
-                        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode final_rpc_data is {final_rpc_data}!')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode rpc_result is {rpc_result}!')
+                    override_htg_valves = []
+                    for zones, bacnet_id in self.nested_group_map[shed_this_zone].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                pass 
+                            else:
+                                final_topic_htg = '/'.join([topic, self.jci_system_mode_topic])
+                                override_htg_valves.append((final_topic_htg, 0)) # override reheat valve to zero %
 
 
-                        zone_setpoints_check = self.rpc_get_mult_setpoints(shed_zones)
-                        zone_setpoints_check_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints_check).get(timeout=90)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - VERIFICATION OF CORRECT SETPOINTS is {zone_setpoints_check_data}')
+                    # merge two lists into a tuple using zip() method to merge the two list elements and then typecasting into tuple.
+                    none_list = []
+                    for i in range(len(release_zones)):
+                        none_list.append(None)
 
-                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS SHEDED SUCCESS!')
+                    bacnet_release = list(self.merge(release_zones,none_list))
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode bacnet_release is {bacnet_release}!')
+                    final_rpc_data = bacnet_override + override_htg_valves + bacnet_release
 
-                    else:
-                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE SHED PASS shed_counts == one!')
+                    rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, final_rpc_data).get(timeout=90)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode final_rpc_data is {final_rpc_data}!')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode rpc_result is {rpc_result}!')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS SHEDED SUCCESS!')
 
-                        self.last_roller_time = get_aware_utc_now()
+
+
+                    # VERIFICATION CHECK THAT PROPER SETPOINTS HAVE BEEN APPLIED
+                    zone_setpoints_check = self.rpc_get_mult_setpoints(self.all_zones)
+                    zone_setpoints_check_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints_check).get(timeout=90)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED mode VERIFICATION OF CORRECT SETPOINTS is {zone_setpoints_check_data}')
+
+
 
                 else:
-                    _log.debug(f'[Conninuous Roller Agent INFO] - SHED Side Passing waiting to td to clear')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - ZONE SHED PASS shed_counts == one!')
+
+                    self.last_roller_time = get_aware_utc_now()
+
+
 
             else:
                 _log.debug(f'[Conninuous Roller Agent INFO] - NEED TO RELEASE A ZONE!')
 
-                # not used at the moment
-                if (get_aware_utc_now() - self.last_roller_time > td(seconds=self.load_shifting_cycle_time_seconds)):
 
-                    # factor in a deadband to release a zone or not
-                    release_calc = self.main_meter_kw_current/1000 - self.building_kw_deadband
-                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode building kW minus deadband is {release_calc}')
+                # factor in a deadband to release a zone or not 
+                release_calc = self.building_kw_spt - self.building_kw_deadband
+                _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode building kW minus deadband is {release_calc}')
 
-                    # if shed counts have values pick a zone to shed, else if they are zero just pass
-                    release_calc_boolean = release_calc > self.building_kw_spt
-                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode release_calc_boolean is {release_calc_boolean}')
+                # release_calc_boolean is True if building kW - deadband is greater than setpoint
+                release_calc_boolean = release_calc > self.main_meter_kw_current/1000
+                _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode release_calc_boolean is {release_calc_boolean}')
 
-                    if not self.cycle_checker(0) and release_calc_boolean:
-                        #self.score_groups()
-                        release_zones = self.get_release_group()
-                        release_this_zone = release_zones[0]
-                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE ZONES: {release_zones}')        
-                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
-
-
-                        bacnet_release = []
-                        for zones, bacnet_id in self.nested_group_map[release_this_zone].items():
-                            if zones not in ('score', 'shed_count'):
-                                topic = '/'.join([self.building_topic, bacnet_id])
-                                if int(bacnet_id) > 10000: # its a trane controller
-                                    final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
-                                    bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
-                                else:
-                                    final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
-                                    bacnet_release.append((final_topic, None))
-                                    final_topic_htg = '/'.join([topic, self.jci_system_mode_topic])
-                                    bacnet_release.append((final_topic_htg, None))
-
-                        rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, bacnet_release).get(timeout=90)
-                        _log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode bacnet_release is result {rpc_result}!')
+                # if zones have alreadby shed AND building kW is less than setpoint - deadband, then continue
+                if not self.cycle_checker(0) and release_calc_boolean:
+                    #self.score_groups()
+                    release_zones = self.get_release_group()
+                    release_this_zone = release_zones[0]
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE ZONES: {release_zones}')        
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode COUNT DOWN RELEASE THIS ZONE: {release_this_zone}')   
 
 
-                        # Move this code to end after RPC call to UNOC the Zones
-                        # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
-                        self.nested_group_map[release_this_zone]['shed_count'] = self.nested_group_map[release_this_zone]['shed_count'] - 1
-                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode shed_counter -1 SUCCESS on group {release_this_zone}')
-                        _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode self.nested_group_map is {self.nested_group_map}')
+                    bacnet_release = []
+                    for zones, bacnet_id in self.nested_group_map[release_this_zone].items():
+                        if zones not in ('score', 'shed_count'):
+                            topic = '/'.join([self.building_topic, bacnet_id])
+                            if int(bacnet_id) > 10000: # its a trane controller
+                                final_topic = '/'.join([topic, self.trane_zonetemp_setpoint_topic])
+                                bacnet_release.append((final_topic, None)) # BACNET RELEASE SET POINT IN TRANE VAV 
+                            else:
+                                final_topic = '/'.join([topic, self.jci_zonetemp_setpoint_topic])
+                                bacnet_release.append((final_topic, None))
+                                final_topic_htg = '/'.join([topic, self.jci_system_mode_topic])
+                                bacnet_release.append((final_topic_htg, None))
 
-                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS DESHEDED SUCCESS!')
 
-                    else:
-                        _log.debug(f'[Conninuous Roller Agent INFO] - ZONE DESHED PASS shed_counts == zero or building kW is within deadband!')
+                    rpc_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, bacnet_release).get(timeout=90)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - afternoon mode bacnet_release is result {rpc_result}!')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - ZONE IS DESHEDED SUCCESS!')
 
-                    self.last_roller_time = get_aware_utc_now()
+
+                    # Move this code to end after RPC call to UNOC the Zones
+                    # SUBRACT a 1 to the zone that was shed for memory on algorithm calculation
+                    self.nested_group_map[release_this_zone]['shed_count'] = self.nested_group_map[release_this_zone]['shed_count'] - 1
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode shed_counter -1 SUCCESS on group {release_this_zone}')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - RELEASE mode self.nested_group_map is {self.nested_group_map}')
+
+
+                    # VERIFICATION CHECK THAT PROPER SETPOINTS HAVE BEEN APPLIED
+                    zone_setpoints_check = self.rpc_get_mult_setpoints(self.all_zones)
+                    zone_setpoints_check_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', zone_setpoints_check).get(timeout=90)
+                    _log.debug(f'[Conninuous Roller Agent INFO] - DESHED mode VERIFICATION OF CORRECT SETPOINTS is {zone_setpoints_check_data}')
+
 
                 else:
-                    _log.debug(f'[Conninuous Roller Agent INFO] - DESHED Side Passing waiting to td to clear')
+                    _log.debug(f'[Conninuous Roller Agent INFO] - ZONE DESHED PASS shed_counts == zero or building kW is within deadband!')
+
+                self.last_roller_time = get_aware_utc_now()
+
 
 
 
