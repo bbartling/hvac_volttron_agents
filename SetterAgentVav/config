@@ -8,8 +8,8 @@
   "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
   "jci_occ_topic": "OCC-SCHEDULE",
   "trane_occ_topic": "Occupancy Request",
-  "jci_system_mode_topic": "SYSTEM-MODE",
-  "dr_event_zntsp_adjust_up": "3.0",
-  "dr_event_zntsp_adjust_down": "-3.0"
+  "jci_reheat_valves_topic": "HTG-O",
+  "dr_event_zntsp_adjust_up": ".30",
+  "dr_event_zntsp_adjust_down": "-.30"
 
 }
