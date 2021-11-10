@@ -6,6 +6,9 @@ __docformat__ = 'reStructuredText'
 
 import logging
 import sys
+import operator
+import pandas as pd
+import numpy as np
 from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 
@@ -26,9 +29,9 @@ def fcone(config_path, **kwargs):
     """
     try:
         config = utils.load_config(config_path)
-        _log.debug(f'[Fault Condition 1 Agent INFO] -  config Load SUCCESS')
+        _log.debug(f'[FC 1 Agent INFO] -  config Load SUCCESS')
     except Exception:
-        _log.debug(f'[Fault Condition 1 Agent INFO] -  config Load FAIL')
+        _log.debug(f'[FC 1 Agent INFO] -  config Load FAIL')
         
         config = {}
 
@@ -36,7 +39,7 @@ def fcone(config_path, **kwargs):
     if not config:
         _log.info("Using Agent defaults for starting configuration.")
 
-    return Continuousroller(**kwargs)
+    return Fcone(**kwargs)
 
 
 class Fcone(Agent):
@@ -44,28 +47,31 @@ class Fcone(Agent):
     Document agent constructor here.
     """
 
-    def __init__(self, setting1=1, setting2="some/random/topic", **kwargs):
+    def __init__(self, **kwargs):
         super(Fcone, self).__init__(**kwargs)
-        _log.debug("vip_identity: " + self.core.identity)
+        _log.debug("[FC 1 Agent INFO] - vip_identity: " + self.core.identity)
 
         self.default_config = {
+                "ahu_instance_id" : "1100" ,
+                "building_topic" : "slipstream_internal/slipstream_hq",
                 "duct_static_setpoint" : "Duct Static Pressure Setpoint Active",
                 "duct_static" : "Duct Static Pressure Local",
                 "vfd_speed" : "Supply Fan Speed Command"
         }
         
-        
+        ahu_instance_id = str(self.default_config["ahu_instance_id"])
+        building_topic = str(self.default_config["building_topic"])
         duct_static_setpoint = str(self.default_config["duct_static_setpoint"])
         duct_static = str(self.default_config["duct_static"])
         vfd_speed = str(self.default_config["vfd_speed"])
         
         
-        
+        self.ahu_instance_id = ahu_instance_id
+        self.building_topic = building_topic        
         self.duct_static_setpoint = duct_static_setpoint
         self.duct_static = duct_static
         self.vfd_speed = vfd_speed
 
-        
         
         self.nested_group_map = {
             'air_handlers' : {
@@ -74,10 +80,17 @@ class Fcone(Agent):
         }
 
 
-        self.duct_static_setpoint = []
-        self.duct_static = []
-        self.vfd_speed = []
+        self.ahu_subscription = '/'.join(["devices",self.building_topic,self.ahu_instance_id])
+        self.final_duct_static_setpoint_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.duct_static_setpoint])
+        self.final_duct_static_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.duct_static])
+        self.final_vfd_speed_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.vfd_speed])
+
+
+        self.duct_static_setpoint_data = []
+        self.duct_static_data = []
+        self.vfd_speed_data = []
         
+
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
         # the agent.
@@ -95,22 +108,31 @@ class Fcone(Agent):
         config = self.default_config.copy()
         config.update(contents)
 
-        _log.debug("[Fault Condition 1 Agent INFO] - Configuring Agent")
+        _log.debug("[FC 1 Agent INFO] - Configuring Agent")
 
         try:
+            ahu_instance_id = str(config["ahu_instance_id"])
+            building_topic = str(config["building_topic"])            
             duct_static_setpoint = str(config["duct_static_setpoint"])
             duct_static = str(config["duct_static"])
             vfd_speed = str(config["vfd_speed"])
+
         except ValueError as e:
-            _log.error("[Fault Condition 1 Agent INFO] - ERROR PROCESSING CONFIGURATION: {}".format(e))
+            _log.error("[FC 1 Agent INFO] - ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
 
-
+        self.ahu_instance_id = ahu_instance_id
+        self.building_topic = building_topic
         self.duct_static_setpoint = duct_static_setpoint
         self.duct_static = duct_static
         self.vfd_speed = vfd_speed
 
-        _log.debug("[Fault Condition 1 Agent INFO] - Configs Set Success")
+        self.final_duct_static_setpoint_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.duct_static_setpoint])
+        self.final_duct_static_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.duct_static])
+        self.final_vfd_speed_topic = '/'.join([self.building_topic,self.ahu_instance_id, self.vfd_speed])
+
+
+        _log.debug("[FC 1 Agent INFO] - Configs Set Success")
 
 
 
@@ -121,12 +143,18 @@ class Fcone(Agent):
         """
         self.vip.pubsub.unsubscribe("pubsub", None, None)
 
+        '''
         for topic in topics:
-            _log.debug(f'[Fault Condition 1 Agent INFO] -  _create_subscriptions {topic}')
+            _log.debug(f'[FC 1 Agent INFO] -  _create_subscriptions {topic}')
             self.vip.pubsub.subscribe(peer='pubsub',
                                     prefix=topic,
                                     callback=self._handle_publish)
+        '''
 
+        _log.debug(f'[FC 1 Agent INFO] -  _create_subscriptions {topics}')
+        self.vip.pubsub.subscribe(peer='pubsub',
+                                prefix=topics,
+                                callback=self._handle_publish)
 
 
 
@@ -145,39 +173,74 @@ class Fcone(Agent):
 
         topic = topic.strip('/all')
         _log.debug(f"*** [Handle Pub Sub INFO] *** topic_formatted {topic}")
+        _log.debug(f"*** [Handle Pub Sub INFO] *** message[0] is {message[0]} ")
 
+
+
+        # else continue
         for point,sensor_reading in message[0].items():
 
-            # CHECK AHU OCC STATUS
-            if point == 'Occupancy Request':
-                _log.debug(f"*** [Handle Pub Sub INFO] *** Found AHU Occ Req point is {point} value of {sensor_reading}")
-                self.ahu_occ_status = sensor_reading
-                _log.debug(f"*** [Handle Pub Sub INFO] *** self.ahu_occ_status is set to {self.ahu_occ_status}")
-
-            # GET ZONE TEMP DATA
-            if point == 'ZN-T' or point == 'Space Temperature Local':
-                _log.debug(f"*** [Handle Pub Sub INFO] *** Found a Zone Temp Published {point} that is {sensor_reading}")
-                if point == 'Space Temperature Local': # Fix Trane controller data that comes through in Metric
-                    sensor_reading = (9/5) * sensor_reading + 32
-
-            self.znt_values[topic] = float(sensor_reading)
-            #_log.debug(f"*** [Handle Pub Sub INFO] *** self.znt_values {self.znt_values}")
+            # CHECK AHU DUCT STATIC SETPOINT
+            if point == self.duct_static_setpoint:
+                _log.debug(f"*** [Handle Pub Sub INFO] *** Found AHU Duct Static Setpoint {point} that is {sensor_reading}")
+                self.duct_static_setpoint_data.append(float(sensor_reading))
 
 
+            # CHECK AHU DUCT STATIC 
+            if point == self.duct_static:
+                _log.debug(f"*** [Handle Pub Sub INFO] *** Found AHU Duct Static {point} that is {sensor_reading}")
+                self.duct_static_data.append(float(sensor_reading))
 
+            # CHECK AHU VFD SPEED
+            if point == self.vfd_speed:
+                _log.debug(f"*** [Handle Pub Sub INFO] *** Found AHU VFD SPEED {point} that is {sensor_reading}")
+                self.vfd_speed_data.append(float(sensor_reading))          
 
-
-
+        
+    # used only once on agent install to subscribe to pub sub topics
     def create_topics_from_map(self,device_map):
         topics=[]
         for group_name, group in device_map.items():
             for key,value in group.items():
                 final_topic_group = '/'.join(["devices",self.building_topic, value])
-                topics.append(final_topic_group) # GET MULTIPLE Zone Temp for this group
-        self.znt_values = {topic:None for topic in topics}
+                topics.append(final_topic_group) 
+        #self.znt_values = {topic:None for topic in topics}
         return topics
 
 
+    # this is to keep array for current hour only
+    def check_list_size(self, arr):
+        _log.debug(f'[FC 1 Agent INFO] - check_list_size check on {arr} the length is {len(arr)}')
+        if len(arr) > 120:
+            arr = arr[-120:]
+            return arr
+        else:
+            return arr
+
+
+    # fdd flagger in boolean TRUE or False
+    def fault_condition_one(self,dataframe):
+        return operator.and_(dataframe.duct_static < dataframe.duct_static_setpoint, 
+        dataframe.vfd_speed >= dataframe.vfd_speed_percent_max - dataframe.vfd_speed_percent_err_thres)
+
+
+    # speaks for itself
+    def get_stuff_done(self):
+        _log.debug(f'[FC 1 Agent INFO] - get_stuff_done GO!')
+        self.check_list_size(self.duct_static_setpoint_data)
+        self.check_list_size(self.duct_static_data)
+        self.check_list_size(self.vfd_speed_data)
+
+        df = pd.DataFrame(list(zip(self.duct_static_setpoint_data, 
+                                    self.duct_static_data,
+                                    self.duct_static_data)), 
+                                    columns =['duct_static_setpoint',
+                                    'duct_static_data',
+                                    'vfd_speed_data'])
+
+        #df = df.rolling('5T').mean()
+
+        _log.debug(f'[FC 1 Agent INFO] - rolling df is {df}')
 
 
 
@@ -191,13 +254,14 @@ class Fcone(Agent):
 
         Usually not needed if using the configuration store.
         """
-        _log.debug(f'[Fault Condition 1 Agent INFO] -  AGENT ONSTART CALL!')
-        self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
+        _log.debug(f'[FC 1 Agent INFO] -  AGENT ONSTART CALL!')
+        #self._create_subscriptions(self.create_topics_from_map(self.nested_group_map))
+        self._create_subscriptions(self.ahu_subscription)
 
 
-        _log.debug(f'[Fault Condition 1 Agent INFO] -  AGENT ONSTART CALL!')
-
-
+        _log.debug(f'[FC 1 Agent INFO] -  AGENT ONSTART CALL!')
+        self.periodic_seconds_param = 300
+        self.core.periodic(self.periodic_seconds_param, self.get_stuff_done)
 
 
     @Core.receiver("onstop")
