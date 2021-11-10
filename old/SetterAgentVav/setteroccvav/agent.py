@@ -444,29 +444,33 @@ class Setteroccvav(Agent):
 
             else:
                 _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go PASSING!!!!')
-
-
-        elif sig_payload == 2:
-            _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
-
-            if self.bacnet_releases_complete == False:
-                self.bacnet_release_go()
-                self.bacnet_releases_complete = True
-
-            else:
-                _log.debug(f'[Simple DR Agent INFO] - bacnet release PASSING!!!')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
 
         else:
+            # after dr event clears on a zero we should hit this if statement to release BAS
+            if self.bacnet_releases_complete == False and self.bacnet_overrides_complete == True:
+                _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
+                self.bacnet_release_go()
+                self.bacnet_releases_complete = True
+                _log.debug(f'[Simple DR Agent INFO] -  bacnet_release_go SUCCESS')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
-            # after dr event clears on a zero we should hit this if statement
-            if self.bacnet_releases_complete == True & self.bacnet_overrides_complete == True:
+
+            # on a zero sig from api if release and override complete, reset params
+            elif self.bacnet_releases_complete == True and self.bacnet_overrides_complete == True:
                 self.bacnet_releases_complete = False
                 self.bacnet_overrides_complete = False
-                _log.debug(f'[Simple DR Agent INFO] -  params all RESET! Ready for another one')
+                _log.debug(f'[Simple DR Agent INFO] -  params all RESET SUCCESS!')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
-            _log.debug(f'[Simple DR Agent INFO] -  "else statement" NO DR EVENT SIG == 0!')
-
+            else:
+                _log.debug(f'[Simple DR Agent INFO] -  Zero signal passing on the "else" ')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
 
 
