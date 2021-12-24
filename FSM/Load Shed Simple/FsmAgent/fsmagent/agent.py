@@ -99,22 +99,29 @@ class Fsmagent(Agent):
         self.transitions = [
 
                         # APPLY BACnet commands: demand response event is True go into BACnet Override Mode from Standby mode
-                        {"trigger": "update", "source": "Standby", "dest": "BACnet_Override", "conditions":"load_shed_status", "unless":["bacnet_overrides_complete","bacnet_releases_complete"]},
+                        {"trigger": "update", "source": "Standby", "dest": "BACnet_Override", 
+                        "conditions":"load_shed_status", "unless":["bacnet_overrides_complete","bacnet_releases_complete"]},
                         
                         # WAIT OUT DR EVENT: demand response event is True, overrides have been applied, wait for event to expire
-                        {"trigger": "update", "source": "BACnet_Override", "dest": "Wait_For_Expiration", "conditions":["bacnet_overrides_complete","load_shed_status"],"unless":"bacnet_releases_complete"},
+                        {"trigger": "update", "source": "BACnet_Override", "dest": "Wait_For_Expiration", 
+                        "conditions":["bacnet_overrides_complete","load_shed_status"],"unless":"bacnet_releases_complete"},
                         
-                        # RELEASE BACnet commands: demand response event has expired by demand response event going False, BACnet Overrides True, BACnet Releases False
-                        {"trigger": "update", "source": "Wait_For_Expiration", "dest": "BACnet_Release", "conditions":"bacnet_overrides_complete","unless":["load_shed_status","bacnet_releases_complete"]},    
+                        # RELEASE BACnet commands: demand response event has expired by demand response event going False
+                        # BACnet Overrides True, BACnet Releases False
+                        {"trigger": "update", "source": "Wait_For_Expiration", "dest": "BACnet_Release", 
+                        "conditions":"bacnet_overrides_complete","unless":["load_shed_status","bacnet_releases_complete"]},    
                         
                         # WAIT for building to go Unnocupied to reset parameters
-                        {"trigger": "update", "source": "BACnet_Release", "dest": "Wait_For_Unnocupied", "conditions":["bacnet_overrides_complete","bacnet_releases_complete","building_occupied"],"unless":"load_shed_status"},
+                        {"trigger": "update", "source": "BACnet_Release", "dest": "Wait_For_Unnocupied", 
+                        "conditions":["bacnet_overrides_complete","bacnet_releases_complete","building_occupied"],"unless":"load_shed_status"},
                         
                         # RESET programming parameters
-                        {"trigger": "update", "source": "Wait_For_Unnocupied", "dest": "Reset_Params", "conditions":["bacnet_overrides_complete","bacnet_releases_complete"],"unless":["building_occupied","load_shed_status"]},
+                        {"trigger": "update", "source": "Wait_For_Unnocupied", "dest": "Reset_Params", 
+                        "conditions":["bacnet_overrides_complete","bacnet_releases_complete"],"unless":["building_occupied","load_shed_status"]},
                         
                         # Go Back to STANDBY: program is ready for next demand response event
-                        {"trigger": "update", "source": "Reset_Params", "dest": "Standby","unless":["bacnet_overrides_complete","bacnet_releases_complete","building_occupied","load_shed_status"]}
+                        {"trigger": "update", "source": "Reset_Params", "dest": "Standby",
+                        "unless":["bacnet_overrides_complete","bacnet_releases_complete","building_occupied","load_shed_status"]}
                     ]
 
         # Set a default configuration to ensure that self.configure is called immediately to setup
