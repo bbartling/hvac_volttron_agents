@@ -1,0 +1,23 @@
+{
+
+  "building_topic": "ben_house/furnace",
+  "zonetemp_setpoint_topic": "RmTmpSpt",
+  "reheat_valves_topic": "None",
+  "dr_event_zntsp_adjust_up": "3.0",
+  "dr_event_zntsp_adjust_down": "-3.0",
+  "nested_group_map": {
+    "lower_north" : {
+    "shed_count": 0,
+    "furnace": "201201"
+    },
+    "lower_south" : {
+    "shed_count": 0
+    },
+    "upper_north" : {
+    "shed_count": 0
+    },
+    "upper_south" : {
+    "shed_count": 0
+    }
+  }
+}
