@@ -1,0 +1,14 @@
+{
+
+  "url": "http://10.200.200.223:5000/payload/current",
+  "building_topic": "slipstream_internal/slipstream_hq",
+  "jci_zonetemp_topic": "ZN-T",
+  "trane_zonetemp_topic": "Space Temperature Local",
+  "jci_zonetemp_setpoint_topic": "ZN-SP",
+  "trane_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
+  "jci_occ_topic": "OCC-SCHEDULE",
+  "trane_occ_topic": "Occupancy Request",
+  "jci_reheat_valves_topic": "HTG-O",
+  "dr_event_zntsp_adjust_up": ".30",
+  "dr_event_zntsp_adjust_down": "-.30"
+}

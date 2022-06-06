@@ -13,11 +13,58 @@ from volttron.platform.agent import utils
 from volttron.platform.vip.agent import Agent, Core, RPC
 from volttron.platform.scheduling import cron
 import random
+from datetime import datetime, timezone, timedelta
 
 
 _log = logging.getLogger(__name__)
 utils.setup_logging()
 __version__ = "0.1"
+
+
+
+event = {
+	"active_period": {
+		"dstart": datetime.now(timezone.utc),
+		"duration": 120,
+		"notification": "null",
+		"ramp_up": "null",
+		"recovery": "null",
+		"tolerance": {
+			"tolerate": {
+				"startafter": "null"
+			}
+		}
+	},
+	"event_signals": [
+		{
+			"current_value": 2.0,
+			"intervals": [
+				{
+					"duration": timedelta(minutes=5),
+                    #"dtstart": datetime.now(timezone.utc),
+                    "dtstart": datetime(2022, 6, 6, 14, 30, 0, 0, tzinfo=timezone.utc),
+					"signal_payload": 1.0,
+					"uid": 0
+				}
+			],
+			"signal_id": "SIG_01",
+			"signal_name": "SIMPLE",
+			"signal_type": "level"
+		}
+	],
+	"response_required": "always",
+	"target_by_type": {
+		"ven_id": [
+			"slipstream-ven4"
+		]
+	},
+	"targets": [
+		{
+			"ven_id": "slipstream-ven4"
+		}
+	]
+}
+
 
 
 def load_me(config_path, **kwargs):
@@ -27,8 +74,8 @@ def load_me(config_path, **kwargs):
 
     :param config_path: Path to a configuration file.
     :type config_path: str
-    :returns: Setteroccvav
-    :rtype: Setteroccvav
+    :returns: Loadshed
+    :rtype: Loadshed
     """
     try:
         global config
@@ -41,17 +88,17 @@ def load_me(config_path, **kwargs):
         _log.debug("[Simple DR Agent INFO] - Using Agent defaults for starting configuration.")
 
 
-    return Setteroccvav(**kwargs)
+    return Loadshed(**kwargs)
     
 
 
-class Setteroccvav(Agent):
+class Loadshed(Agent):
     """
     Document agent constructor here.
     """
 
     def __init__(self, **kwargs):
-        super(Setteroccvav, self).__init__(**kwargs)
+        super(Loadshed, self).__init__(**kwargs)
         _log.debug("vip_identity: " + self.core.identity)
 
 
@@ -97,12 +144,15 @@ class Setteroccvav(Agent):
         _log.debug(f'[Simple DR Agent INFO] - DEFAULT CONFIG LOAD SUCCESS!')
 
 
-        self.agent_id = "dr_event_setpoint_adj_agent"
+        self.agent_id = "loadshedagent"
 
 
         self.bacnet_releases_complete = False
         self.bacnet_overrides_complete = False
 
+        self.adr_start = None
+        self.adr_payload_value = None
+        self.adr_duration = None
 
 
 
@@ -124,8 +174,9 @@ class Setteroccvav(Agent):
             'score': 0,
             'shed_count': 0,
             'VMA-1-6': '8',
-            'VMA-1-8': '6',
-            'VMA-1-9': '10',
+            'VMA-1-8': '11002', # formerly JCI #8
+            'VAV 1-9': '11007',
+            'VMA-1-7': '10', # changed name to VAV 7
             'VMA-1-12': '19',
             'VMA-1-13': '20',
             'VMA-1-14': '37',
@@ -141,7 +192,7 @@ class Setteroccvav(Agent):
             'VMA-2-4': '29',
             'VAV-2-5': '12028',
             'VMA-2-6': '27',
-            #'VMA-2-12': '26',
+            'VMA-2-12': '12026', # formerly JCI #26
             'VMA-2-7': '30'
             },
             'group_l2s' : {
@@ -151,8 +202,9 @@ class Setteroccvav(Agent):
             'VAV-2-9': '12035',
             'VMA-2-10': '36',
             'VMA-2-11': '25',
-            'VMA-2-13': '23',
-            'VMA-2-14': '24'
+            'VMA-2-13': '12023',  # formerly JCI #23
+            'VMA-2-14': '24',
+            'VAV 2-12': '12026',
             }
         }
 
@@ -400,6 +452,37 @@ class Setteroccvav(Agent):
         _log.debug(f'[Simple DR Agent INFO] - bacnet override {final_bacnet_overrides}')
 
 
+    def event_checkr(self,event_start,duration):
+        now_utc = datetime.now(timezone.utc)
+        _log.debug(f'[Simple DR Agent INFO] - event_start: ',event_start)
+
+        event_ends = event_start + duration
+        _log.debug(f'[Simple DR Agent INFO] - event_ends: ',event_ends)
+        _log.debug(f'[Simple DR Agent INFO] - now_utc: ',datetime.now_utc)
+        
+        if now_utc > event_start and now_utc < event_ends: #future time is greater
+            _log.debug(f'[Simple DR Agent INFO] - Event is active!!!')
+            return True
+        else:
+            _log.debug(f'[Simple DR Agent INFO] - Event is NOT active!!!')
+            return False
+
+
+    def process_adr_event(self,event):
+        signal = event['event_signals'][0]
+        intervals = signal['intervals']
+
+        _log.debug(f"[Simple DR Agent INFO] - process_adr_event called")
+
+        for interval in intervals:
+            self.adr_start = interval['dtstart']
+            self.adr_payload_value = interval['signal_payload']
+            self.adr_duration = interval['duration']
+           
+        _log.debug(f"[Simple DR Agent INFO] -  open ADR process of signal sucess!")
+        _log.debug(f"[Simple DR Agent INFO] -  adr_start is {self.adr_start}")
+        _log.debug(f"[Simple DR Agent INFO] -  adr_payload_value {self.adr_payload_value}")
+        _log.debug(f"[Simple DR Agent INFO] -  adr_duration {self.adr_duration}")
 
 
 
@@ -408,48 +491,22 @@ class Setteroccvav(Agent):
         default_config = self.default_config.copy()
         _log.debug(f"[Simple DR Agent INFO] - onstart config: {default_config}")
 
-        self.url = default_config['url']
-        _log.debug(f"[Simple DR Agent INFO] - Flask App API url: {self.url}")
+
+        # dummy event until real event comes in via open ADR VEN agent
+        self.process_adr_event(event)
+        _log.debug(f"[Simple DR Agent INFO] - process_adr_event hit")
         
-        self.core.periodic(60, self.dr_signal_checker)
-        _log.debug(f'[Simple DR Agent INFO] - AGENT ONSTART CALLED SUCCESS!')
-
-
-
-    def dr_signal_checker(self):
-
-        try:
-
-            requests = (grequests.get(self.url),)
-            result, = grequests.map(requests)
-            contents = result.json()
-            _log.debug(f"[Simple DR Agent INFO] - Flask App API contents: {contents}")
-            _log.debug(f"[Simple DR Agent INFO] - Flask App API SUCCESS")
-            sig_payload = contents["payload"]
-
-        except Exception as error:
-            _log.debug(f"[Simple DR Agent INFO] - Error trying Flask App API {error}")
-            _log.debug(f"[Simple DR Agent INFO] - RESORTING TO NO DEMAND RESPONSE EVENT")
-            sig_payload = 0
-
-        _log.debug(f'[Simple DR Agent INFO] - signal_payload from Flask App is {sig_payload}!')
-
-
-        if sig_payload == 1:
-            _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go GO!!!!')
+        while self.event_checkr == True:
 
             if self.bacnet_overrides_complete == False:
+                _log.debug(f"[Simple DR Agent INFO] - Demand Response Event True!!!")
+                _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go GO!!!!')
                 self.bacnet_override_go()
                 self.bacnet_overrides_complete = True
 
-            else:
-                _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go PASSING!!!!')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
-
-
         else:
-            # after dr event clears on a zero we should hit this if statement to release BAS
+
+            # after dr event expires we should hit this if statement to release BAS
             if self.bacnet_releases_complete == False and self.bacnet_overrides_complete == True:
                 _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
                 self.bacnet_release_go()
@@ -459,7 +516,7 @@ class Setteroccvav(Agent):
                 _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
 
-            # on a zero sig from api if release and override complete, reset params
+            # after dr event expires if release and override complete, reset params
             elif self.bacnet_releases_complete == True and self.bacnet_overrides_complete == True:
                 self.bacnet_releases_complete = False
                 self.bacnet_overrides_complete = False
@@ -468,10 +525,7 @@ class Setteroccvav(Agent):
                 _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
             else:
-                _log.debug(f'[Simple DR Agent INFO] -  Zero signal passing on the "else" ')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
-
+                pass
 
 
     @Core.receiver("onstop")

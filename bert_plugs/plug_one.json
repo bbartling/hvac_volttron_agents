@@ -1,0 +1,9 @@
+{
+    "driver_config": {
+        "device_address": "http://10.200.200.170:8080/BertRESTXMLServer/webresources/DeviceProperties",
+        "device_id": "80c955648de4"
+    },
+    "driver_type": "bert_plugs",
+        "interval":60,
+    "registry_config": "config://registry_configs/1.csv"
+}
