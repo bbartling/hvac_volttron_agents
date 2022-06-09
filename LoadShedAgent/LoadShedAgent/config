@@ -8,13 +8,15 @@
   "vendor1_zonetemp_setpoint_topic": "ZN-SP",
   "vendor1_occ_topic": "OCC-SCHEDULE",
   "vendor1_reheat_valves_topic": "HTG-O",
+  "vendor1_units": "imperial",
 
-  "vendor2_bacnet_id_start": 10000,
-  "vendor2_bacnet_id_end": 12000,
+  "vendor2_bacnet_id_start": 12000,
+  "vendor2_bacnet_id_end": 13000,
   "vendor2_zonetemp_topic": "Space Temperature Local",
   "vendor2_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
   "vendor2_occ_topic": "Occupancy Request",
   "vendor2_reheat_valves_topic": "None",
+  "vendor2_units": "metric",
 
   "dr_event_zntsp_adjust_up": ".30",
   "dr_event_zntsp_adjust_down": "-.30",
