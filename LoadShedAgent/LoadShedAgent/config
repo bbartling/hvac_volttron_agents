@@ -10,7 +10,7 @@
   "vendor1_reheat_valves_topic": "HTG-O",
   "vendor1_units": "imperial",
 
-  "vendor2_bacnet_id_start": 12000,
+  "vendor2_bacnet_id_start": 11000,
   "vendor2_bacnet_id_end": 13000,
   "vendor2_zonetemp_topic": "Space Temperature Local",
   "vendor2_zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",

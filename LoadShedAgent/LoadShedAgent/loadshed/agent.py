@@ -5,6 +5,7 @@ Agent documentation goes here.
 
 __docformat__ = 'reStructuredText'
 
+from http.client import NotConnected
 import logging, gevent, heapq, grequests
 import sys
 from datetime import timedelta as td, datetime as dt
@@ -26,7 +27,7 @@ __version__ = "0.1"
 # when it comes through on message bus via open ADR topic
 DUMMY_EVENT = {
 	"active_period": {
-		"dstart": datetime(2022, 6, 6, 14, 30, 0, 0, tzinfo=timezone.utc),
+		"dstart": datetime(2022, 6, 6, 14, 30, 0, 0, tzinfo=timezone.utc), # not used?
 		"duration": 120,
 		"notification": "null",
 		"ramp_up": "null",
@@ -43,8 +44,8 @@ DUMMY_EVENT = {
 			"intervals": [
 				{
 					"duration": timedelta(minutes=5),
-                    "dtstart": datetime.now(timezone.utc) - timedelta(seconds=30),
-                    #"dtstart": datetime(2022, 6, 6, 14, 30, 0, 0, tzinfo=timezone.utc),
+                    #"dtstart": datetime.now(timezone.utc) - timedelta(seconds=30),
+                    "dtstart": datetime(2022, 6, 11, 19, 7, 0, 0, tzinfo=timezone.utc),
 					"signal_payload": 1.0,
 					"uid": 0
 				}
@@ -82,12 +83,12 @@ def load_me(config_path, **kwargs):
     try:
         global config
         config = utils.load_config(config_path)
-        _log.debug(f'[Simple DR Agent INFO] - debug config {config}')
+        _log.info(f'[Simple DR Agent INFO] - debug config {config}')
     except Exception:
         config = {}
 
     if not config:
-        _log.debug("[Simple DR Agent INFO] - Using Agent defaults for starting configuration.")
+        _log.info("[Simple DR Agent INFO] - Using Agent defaults for starting configuration.")
 
 
     return Loadshed(**kwargs)
@@ -101,7 +102,7 @@ class Loadshed(Agent):
 
     def __init__(self, **kwargs):
         super(Loadshed, self).__init__(**kwargs)
-        _log.debug("[Simple DR Agent INFO] - vip_identity: " + self.core.identity)
+        _log.info("[Simple DR Agent INFO] - vip_identity: " + self.core.identity)
 
 
         self.default_config = {
@@ -205,7 +206,19 @@ class Loadshed(Agent):
         self.adr_start = None
         self.adr_payload_value = None
         self.adr_duration = None
+        self.adr_event_ends = None
+
+        self.until_start_time_seconds = None
+        self.until_start_time_minutes = None
+        self.until_start_time_hours = None
+
+        self.until_end_time_seconds = None
+        self.until_end_time_minutes = None
+        self.until_end_time_hours = None
+
         self.adr_event_status = False
+        self.event_checkr_isrunning = False
+        self.bas_points_that_are_written = None
 
 
 
@@ -224,7 +237,7 @@ class Loadshed(Agent):
         """
         config = self.default_config.copy()
         config.update(contents)
-        _log.debug("[Simple DR Agent INFO] - ATTEMPTING CONFIG FILE LOAD!")
+        _log.info("[Simple DR Agent INFO] - ATTEMPTING CONFIG FILE LOAD!")
 
         try:
             self.building_topic = str(config["building_topic"])
@@ -254,8 +267,8 @@ class Loadshed(Agent):
             _log.error("ERROR PROCESSING CONFIGURATION: {}".format(e))
             return
 
-        _log.debug(f'[Simple DR Agent INFO] - CONFIG FILE LOAD SUCCESS!')
-        _log.debug(f'[Simple DR Agent INFO] - CONFIGS nested_group_map is {self.nested_group_map}')
+        _log.info(f'[Simple DR Agent INFO] - CONFIG FILE LOAD SUCCESS!')
+        _log.info(f'[Simple DR Agent INFO] - CONFIGS nested_group_map is {self.nested_group_map}')
 
 
 
@@ -285,13 +298,13 @@ class Loadshed(Agent):
         registers on the device
         """
         # Just write something to the logs so that we can see our success
-        _log.debug("[Simple DR Agent INFO] - Device {} Publish: {}".format(self.ahu_topic, message))
+        _log.info("[Simple DR Agent INFO] - Device {} Publish: {}".format(self.ahu_topic, message))
 
 
 
     def bacnet_override_go(self):
 
-        _log.debug(f"[Simple DR Agent INFO] - bacnet_override_go called!")
+        _log.info(f"[Simple DR Agent INFO] - bacnet_override_go called!")
 
         # create start and end timestamps for actuator agent scheduling
         _now = get_aware_utc_now()
@@ -307,79 +320,94 @@ class Loadshed(Agent):
                 actuator_schedule_request.append([device, str_start, str_end])
 
         # use actuator agent to get all zone temperature setpoint data
-        result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', actuator_schedule_request).get(timeout=90)
-        _log.debug(f'[Simple DR Agent INFO] - ACTUATOR SCHEDULE EVENT SUCESS {result}')
+        actuator_sched_req_result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', actuator_schedule_request).get(timeout=90)
+        _log.info(f'[Simple DR Agent INFO] - bacnet_override_go actuator_sched_req_result is {actuator_sched_req_result}')
 
+        # two different vendors VAV boxes each with unique range of BACnet instance IDs
         vendor1_range = range(self.vendor1_bacnet_id_start,self.vendor1_bacnet_id_end)
         vendor2_range = range(self.vendor2_bacnet_id_start,self.vendor2_bacnet_id_end)
-
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor1_bacnet_id_start {self.vendor1_bacnet_id_start}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor1_bacnet_id_end {self.vendor1_bacnet_id_end}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor2_bacnet_id_start {self.vendor2_bacnet_id_start}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor2_bacnet_id_end {self.vendor2_bacnet_id_end}')
         
         actuator_get_this_data = []
         for group in self.nested_group_map.values():
             for device_address in group.values():
                 topic_group_ = '/'.join([self.building_topic, str(device_address)])
-
                 if int(device_address) in vendor1_range: # its a JCI controller @ Slipstream office
                     topic_group_device = '/'.join([topic_group_, self.vendor1_zonetemp_setpoint_topic])
 
                 elif int(device_address) in vendor2_range: # its a trane controller @ Slipstream office
                     topic_group_device = '/'.join([topic_group_, self.vendor2_zonetemp_setpoint_topic])                    
-
                 else:
-                    _log.debug(f'[Simple DR Agent INFO] - ERROR, passing on this {device_address} not found in ranges of vendor addresses') 
-
+                    _log.info(f'[Simple DR Agent INFO] - bacnet_override_go ERROR, passing on this {device_address} not found in ranges of vendor addresses') 
                 actuator_get_this_data.append(topic_group_device) 
-
         
-        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', actuator_get_this_data).get(timeout=300)
-        _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go zone_setpoints_data values is {zone_setpoints_data}')
+        zone_setpoints_data_request = self.vip.rpc.call('platform.actuator', 
+                                            'get_multiple_points', 
+                                            actuator_get_this_data).get(timeout=300)
+        _log.info(f'[Simple DR Agent INFO] - bacnet_override_go zone_setpoints_data_request is {zone_setpoints_data_request}')
 
 
-        # loop through data recieved back from actuator agent of zone setpoints
-        # create a new data structure and add the adjustment value to the zone setpoints
-        # use this data structure to write back to the BAS via the actuator agent
+        '''
+        loop through data recieved back from actuator agent of zone setpoints
+        create a new data structure and add the adjustment value to the zone setpoints
+        use this data structure to write back to the BAS via the actuator agent
+        '''
 
         write_to_bas = []
-        for obj,setpoint in zone_setpoints_data[0].items():
+
+        # this data structure is used for bacnet_release_go()
+        log_of_points_written = []
+        for obj,setpoint in zone_setpoints_data_request[0].items():
 
             obj_split = obj.split("/")
 
-            if int(obj_split[2]) in vendor1_range:
+            campus_topic = obj_split[0]
+            building_topic = obj_split[1]
+            dev_address = obj_split[2]
+            dev_point = obj_split[3]
+
+            if int(dev_address) in vendor1_range:
                 if self.vendor1_units == "metric":
                     setpoint = (setpoint * 5/9) + (self.dr_event_zntsp_adjust_up * 5/9)
                 else:
                     setpoint = setpoint + self.dr_event_zntsp_adjust_up
-
-            if int(obj_split[2]) in vendor2_range:
+            if int(dev_address) in vendor2_range:
                 if self.vendor2_units == "metric":
                     setpoint = (setpoint * 5/9) + (self.dr_event_zntsp_adjust_up * 5/9)
                 else:
                     setpoint = setpoint + self.dr_event_zntsp_adjust_up
             
             # formatting requirement for actuator agent
-            volttron_string = f"{obj_split[0]}/{obj_split[1]}/{obj_split[2]}/{obj_split[3]}/{str(setpoint)}"
-            write_to_bas.append(volttron_string)
+            volttron_string = f"{campus_topic}/{building_topic}/{dev_address}/{dev_point}"
 
-        _log.debug(f'[Simple DR Agent INFO] - write_to_bas is {write_to_bas}')
-        write_to_bas_result = self.vip.rpc.call('platform.actuator', 'set_multiple_points', self.core.identity, write_to_bas).get(timeout=300)
-        _log.debug(f'[Simple DR Agent INFO] - bacnet override rpc_result result {write_to_bas_result}!')
+            # requires a tuple
+            write_to_bas.append((volttron_string, setpoint))
+
+            # store data to release when event is over
+            log_of_points_written.append(volttron_string)
+        
+        # used for bacnet_release_go() when event is over
+        self.bas_points_that_are_written = log_of_points_written
+
+        
+        '''
+        write new BACnet setpoints
+        set_multiple_points doesnt return anything if success or fail
+        verified working with 3rd party BACnet scan tool
+        ''' 
+        self.vip.rpc.call('platform.actuator','set_multiple_points', self.core.identity, write_to_bas).get(timeout=300)
+        _log.info(f'[Simple DR Agent INFO] - bacnet_override_go BACnet OVERRIDES IMPLEMENTED!!')
 
 
 
     def bacnet_release_go(self):
 
-        _log.debug(f"[Simple DR Agent INFO] - bacnet_release_go called!")
+        _log.info(f"[Simple DR Agent INFO] - bacnet_release_go called!")
 
         # create start and end timestamps for actuator agent scheduling
         _now = get_aware_utc_now()
         str_start = format_timestamp(_now)
         _end = _now + td(seconds=10)
         str_end = format_timestamp(_end)
-
 
         actuator_schedule_request = []
         for group in self.nested_group_map.values():
@@ -389,133 +417,151 @@ class Loadshed(Agent):
 
         # use actuator agent to get all zone temperature setpoint data
         result = self.vip.rpc.call('platform.actuator', 'request_new_schedule', self.core.identity, 'my_schedule', 'HIGH', actuator_schedule_request).get(timeout=90)
-        _log.debug(f'[Simple DR Agent INFO] - ACTUATOR SCHEDULE EVENT SUCESS {result}')
-
-        vendor1_range = range(self.vendor1_bacnet_id_start,self.vendor1_bacnet_id_end)
-        vendor2_range = range(self.vendor2_bacnet_id_start,self.vendor2_bacnet_id_end)
-
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor1_bacnet_id_start {self.vendor1_bacnet_id_start}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor1_bacnet_id_end {self.vendor1_bacnet_id_end}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor2_bacnet_id_start {self.vendor2_bacnet_id_start}')
-        _log.debug(f'[Simple DR Agent INFO] - self.vendor2_bacnet_id_end {self.vendor2_bacnet_id_end}')
-        
-        actuator_get_this_data = []
-        for group in self.nested_group_map.values():
-            for device_address in group.values():
-                topic_group_ = '/'.join([self.building_topic, str(device_address)])
-
-                if int(device_address) in vendor1_range: # its a JCI controller @ Slipstream office
-                    topic_group_device = '/'.join([topic_group_, self.vendor1_zonetemp_setpoint_topic])
-
-                elif int(device_address) in vendor2_range: # its a trane controller @ Slipstream office
-                    topic_group_device = '/'.join([topic_group_, self.vendor2_zonetemp_setpoint_topic])                    
-
-                else:
-                    _log.debug(f'[Simple DR Agent INFO] - ERROR, passing on this {device_address} not found in ranges of vendor addresses') 
-
-                actuator_get_this_data.append(topic_group_device) 
-
-        
-        zone_setpoints_data = self.vip.rpc.call('platform.actuator', 'get_multiple_points', actuator_get_this_data).get(timeout=300)
-        _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go zone_setpoints_data values is {zone_setpoints_data}')
-
-        # loop through data recieved back from actuator agent of zone setpoints
-        # create a new data structure and add the adjustment value to the zone setpoints
-        # use this data structure to write back to the BAS via the actuator agent
+        _log.info(f'[Simple DR Agent INFO] - bacnet_release_go actuator agent schedule request is {result}')
 
         write_releases_to_bas = []
-        for obj,setpoint in zone_setpoints_data[0].items():
+        for device_and_point in self.bas_points_that_are_written:
 
-            obj_split = obj.split("/")
-            
-            # formatting requirement for actuator agent
-            # point value of None will release
-            volttron_string = f"{obj_split[0]}/{obj_split[1]}/{obj_split[2]}/{obj_split[3]}/{str(None)}"
-            write_releases_to_bas.append(volttron_string)
+            # tuple data structure for actuator agent
+            write_releases_to_bas.append((device_and_point, None))
 
-        _log.debug(f'[Simple DR Agent INFO] - write_releases_to_bas is {write_releases_to_bas}')
+        _log.info(f'[Simple DR Agent INFO] - write_releases_to_bas is {write_releases_to_bas}')
 
-        write_to_bas_result = self.vip.rpc.call('platform.actuator', 
+        self.vip.rpc.call('platform.actuator', 
                             'set_multiple_points', 
                             self.core.identity, 
                             write_releases_to_bas).get(timeout=300)
 
-        _log.debug(f'[Simple DR Agent INFO] - write_releases_to_bas result is {write_to_bas_result}!')
+        _log.info(f'[Simple DR Agent INFO] - write_releases_to_bas finished!!!')
+        _log.info(f'[Simple DR Agent INFO] - write_releases_to_bas is {write_releases_to_bas}')
 
 
-
-
+    # called by periodic on an interval
     def event_checkr(self):
+
         now_utc = get_aware_utc_now()
 
-        #self.adr_event_status = self.event_checkr(self.adr_start,self.adr_duration)
-        event_ends = self.adr_start + self.adr_duration
-        
-        if now_utc > self.adr_start and now_utc < event_ends: #future time is greater
+        self.until_start_time_seconds = (self.adr_start - now_utc).total_seconds()
+        self.until_start_time_minutes = self.until_start_time_seconds / 60
+        self.until_start_time_hours = self.until_start_time_minutes / 60
 
-            _log.debug(f'[Simple DR Agent INFO] - The Demand Response Event is ACTIVE!!!')
+        self.until_end_time_seconds = (self.adr_event_ends - now_utc).total_seconds()
+        self.until_end_time_minutes = self.until_end_time_seconds / 60
+        self.until_end_time_hours = self.until_end_time_minutes / 60
 
-            if self.bacnet_overrides_complete == False:
-                _log.debug(f"[Simple DR Agent INFO] - Demand Response Event True!!!")
-                _log.debug(f'[Simple DR Agent INFO] - bacnet_override_go GO!!!!')
+        if self.until_start_time_seconds > 0:
+
+            _log.info(f'[Simple DR Agent INFO] - Load Shed to start in {self.adr_start}')
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To Start {round(self.until_start_time_hours)} hours') 
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To Start {round(self.until_start_time_minutes)} minutes')
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To Start {round(self.until_start_time_seconds)} seconds') 
+
+        elif self.adr_event_status:
+            _log.info(f'[Simple DR Agent INFO] - Demand Response Event Is Active!!')
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To End {round(self.until_end_time_hours)} hours') 
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To End {round(self.until_end_time_minutes)} minutes')
+            _log.info(f'[Simple DR Agent INFO] - Count Down Timer To End {round(self.until_end_time_seconds)} seconds') 
+
+        else:
+            _log.info(f'[Simple DR Agent INFO] - No Overrides Applied or Future Demand Response Event Scheduled')
+
+
+        '''
+        if the periodic interval is short the
+        possibility could happen that the previous
+        event_checkr call didnt finish if alot of BACnet
+        actions are being applied to the HVAC system
+        '''
+        if self.event_checkr_isrunning:
+            return
+
+
+        # to prevent the "periodic" running again when/if
+        # a BACnet release/write is being appliend
+        self.event_checkr_isrunning = True
+
+        # check if the demand response event is active or not
+        if now_utc >= self.adr_start and now_utc < self.adr_event_ends: #future time is greater
+
+            _log.info(f'[Simple DR Agent INFO] - The Demand Response Event is ACTIVE!!!')
+
+            if not self.bacnet_overrides_complete:
+                _log.info(f"[Simple DR Agent INFO] - Demand Response Event True!!!")
+                _log.info(f'[Simple DR Agent INFO] - bacnet_override_go GO!!!!')
                 self.bacnet_override_go()
                 self.bacnet_overrides_complete = True
+                self.adr_event_status = True
 
-            _log.debug(f'[Simple DR Agent INFO] - System is Overridden: {self.bacnet_overrides_complete}!!!')
+            _log.info(f'[Simple DR Agent INFO] - System is Overridden: {self.bacnet_overrides_complete}!!!')
 
         else: # event is False
 
             # after dr event expires we should hit this if statement to release BAS
-            if self.bacnet_releases_complete == False and self.bacnet_overrides_complete == True:
-                _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
-                self.bacnet_release_go(self)
+            if not self.bacnet_releases_complete and self.bacnet_overrides_complete:
+                _log.info(f'[Simple DR Agent INFO] - bacnet_release_go GO!!!!')
+                self.bacnet_release_go()
                 self.bacnet_releases_complete = True
-                _log.debug(f'[Simple DR Agent INFO] - bacnet_release_go SUCCESS')
-                _log.debug(f'[Simple DR Agent INFO] - self.bacnet_releases_complete is {self.bacnet_releases_complete}')
-                _log.debug(f'[Simple DR Agent INFO] - self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
+                self.adr_event_status = False
+                _log.info(f'[Simple DR Agent INFO] - bacnet_release_go SUCCESS')
+                _log.info(f'[Simple DR Agent INFO] - self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.info(f'[Simple DR Agent INFO] - self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
 
             # after dr event expires if release and override complete, reset params
-            # LOGIC ASSUMES ONLY 1 EVENT 
-            elif self.bacnet_releases_complete == True and self.bacnet_overrides_complete == True:
+            # LOGIC ASSUMES ONLY 1 EVENT PER DAY
+            if self.bacnet_releases_complete and self.bacnet_overrides_complete:
                 self.bacnet_releases_complete = False
                 self.bacnet_overrides_complete = False
-                _log.debug(f'[Simple DR Agent INFO] -  params all RESET SUCCESS!')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
-                _log.debug(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
-
-            else:
-                pass
+                _log.info(f'[Simple DR Agent INFO] -  params all RESET SUCCESS!')
+                _log.info(f'[Simple DR Agent INFO] -  self.bacnet_releases_complete is {self.bacnet_releases_complete}')
+                _log.info(f'[Simple DR Agent INFO] -  self.bacnet_overrides_complete is {self.bacnet_overrides_complete}')
 
 
+        self.event_checkr_isrunning = False
 
 
+
+    # called when agent is installed and (future)
+    # when a new event comes in on the message bus
     def process_adr_event(self,event):
+
+        now_utc = get_aware_utc_now()
+
         signal = event['event_signals'][0]
         intervals = signal['intervals']
 
+        # loop through open ADR payload
         for interval in intervals:
             self.adr_start = interval['dtstart']
             self.adr_payload_value = interval['signal_payload']
             self.adr_duration = interval['duration']
+
+            self.adr_event_ends = self.adr_start + self.adr_duration
+
+            self.until_start_time_seconds = (self.adr_start - now_utc).total_seconds()
+            self.until_start_time_minutes = self.until_start_time_seconds / 60
+            self.until_start_time_hours = self.until_start_time_minutes / 60
+
+            self.until_end_time_seconds = (self.adr_event_ends - now_utc).total_seconds()
+            self.until_end_time_minutes = self.until_end_time_seconds / 60
+            self.until_end_time_hours = self.until_end_time_minutes / 60
 
 
 
     @Core.receiver("onstart")
     def onstart(self, sender, **kwargs):
 
-        default_config = self.default_config.copy()
-        _log.debug(f"[Simple DR Agent INFO] - onstart self.nested_group_map: {self.nested_group_map}")
+        #default_config = self.default_config.copy()
+        #_log.info(f"[Simple DR Agent INFO] - onstart self.nested_group_map: {self.nested_group_map}")
 
-        # dummy event until real event comes in via open ADR VEN agent
+        # use dummy event until real event comes in via open ADR VEN agent
         self.process_adr_event(DUMMY_EVENT)
-        _log.debug(f"[Simple DR Agent INFO] - process_adr_event hit")
-        _log.debug(f"[Simple DR Agent INFO] - open ADR process of signal sucess!")
-        _log.debug(f"[Simple DR Agent INFO] - adr_start is {self.adr_start}")
-        _log.debug(f"[Simple DR Agent INFO] - adr_payload_value {self.adr_payload_value}")
-        _log.debug(f"[Simple DR Agent INFO] - adr_duration {self.adr_duration}")
-        _log.debug(f"[Simple DR Agent INFO] - adr_event_status {self.adr_event_status}")
-
+        _log.info(f"[Simple DR Agent INFO] - process_adr_event hit")
+        _log.info(f"[Simple DR Agent INFO] - open ADR process of signal sucess!")
+        _log.info(f"[Simple DR Agent INFO] - adr_start is {self.adr_start}")
+        _log.info(f"[Simple DR Agent INFO] - adr_payload_value {self.adr_payload_value}")
+        _log.info(f"[Simple DR Agent INFO] - adr_duration {self.adr_duration}")
+        _log.info(f"[Simple DR Agent INFO] - adr_event_status {self.adr_event_status}")
 
 
         self.core.periodic(5, self.event_checkr)
@@ -528,12 +574,9 @@ class Loadshed(Agent):
         This method is called when the Agent is about to shutdown, but before it disconnects from
         the message bus.
         """
-        _log.debug(f'[Simple DR Agent INFO] - onstop RELEASE BACnet')
+        _log.info(f'[Simple DR Agent INFO] - onstop CALLED!!')
 
         #self.bacnet_release_go()
-
-        _log.debug(f'[Simple DR Agent INFO] - onstop BACnet RELEASE success!')
-
 
 
 
