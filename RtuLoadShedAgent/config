@@ -1,0 +1,15 @@
+{
+"building_topic": "slipstream_internal/slipstream_hq",
+
+"nested_group_map" : {
+    "rtus" : {
+        "device_address": "1100",
+        "clg_compressor_topic":[
+            "Compressor 1 Command",
+            "Compressor 2 Command",
+            "Compressor 3 Command",
+            "Compressor 4 Command"
+            ]
+        }
+    }
+}
