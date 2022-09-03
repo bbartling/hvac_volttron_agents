@@ -1,0 +1,42 @@
+{
+
+  "building_topic": "slipstream_internal/slipstream_hq",
+
+  "vendors": [
+      {"bacnet_id_start": 1,
+      "bacnet_id_end": 100,
+      "zonetemp_topic": "ZN-T",
+      "zonetemp_setpoint_topic": "ZN-SP",
+      "occ_topic": "OCC-SCHEDULE",
+      "reheat_valves_topic": "HTG-O",
+      "units": "imperial"
+      },
+      {"bacnet_id_start": 11000,
+      "bacnet_id_end": 13000,
+      "zonetemp_topic": "Space Temperature Local",
+      "zonetemp_setpoint_topic": "Space Temperature Setpoint BAS",
+      "occ_topic": "Occupancy Request",
+      "reheat_valves_topic": "Heating Valve Command",
+      "units": "metric"
+      }
+    ],
+
+  "dr_event_zntsp_adjust_up": "2.0",
+  "dr_event_zntsp_adjust_down": "-2.0",
+
+  "nested_group_map" : {
+
+    "floor2_north" : {
+        "VMA-2-3": "31",
+        "VMA-2-4": "29",
+        "VMA-2-6": "27",
+        "VMA-2-7": "30"
+    },
+    "floor2_south" : {
+        "VMA-2-8": "34",
+        "VMA-2-10": "36",
+        "VMA-2-11": "25",
+        "VMA-2-14": "24"
+        }
+    }
+}
