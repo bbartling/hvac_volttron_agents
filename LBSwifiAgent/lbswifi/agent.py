@@ -348,8 +348,10 @@ class LbsWifi(Agent):
         # This function is called whenever an openadr event is seen on the bus
         # message should be the adr event dict
         
-        _log.info(f"[LBS Agent INFO] - INCOMING LBS MESSAGE!!!!: {message}")
-        #self.process_adr_event(message)
+        _log.info(f"[LBS Agent INFO] - INCOMING LBS MESSAGE!!!!: {message[0]}")
+        
+        zone3_headcount = message[0].get("headcount-zone-3")
+        _log.info(f"[LBS Agent INFO] - Zone 3 Head Count is: {zone3_headcount}")
 
 
 
