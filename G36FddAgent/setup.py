@@ -4,7 +4,7 @@ MAIN_MODULE = 'agent'
 
 # Find the agent package that contains the main module
 packages = find_packages('.')
-agent_package = 'fcone'
+agent_package = 'faultmachine'
 
 # Find the version number from the main module
 agent_module = agent_package + '.' + MAIN_MODULE
@@ -15,9 +15,7 @@ __version__ = _temp.__version__
 setup(
     name=agent_package + 'agent',
     version=__version__,
-    author_email="bbartling@slipstreaminc.org",
-    url="https://slipstreaminc.org/",
-    description="g36 fdd fault code 1",
+    
     install_requires=['volttron'],
     packages=packages,
     entry_points={
