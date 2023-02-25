@@ -32,9 +32,9 @@ def faultmachine(config_path, **kwargs):
     """
     try:
         config = utils.load_config(config_path)
-        _log.debug(f"[G36 Agent INFO] -  config Load SUCCESS")
+        _log.info(f"[G36 Agent INFO] -  config Load SUCCESS")
     except Exception:
-        _log.debug(f"[G36 Agent INFO] -  config Load FAIL")
+        _log.info(f"[G36 Agent INFO] -  config Load FAIL")
 
         config = {}
 
@@ -51,7 +51,7 @@ class Faultmachine(Agent):
 
     def __init__(self, setting1=1, setting2="some/random/topic", **kwargs):
         super(Faultmachine, self).__init__(**kwargs)
-        _log.debug("vip_identity: " + self.core.identity)
+        _log.info("vip_identity: " + self.core.identity)
 
         self.default_config = {
             "ahu_instance_id": "1100",
@@ -115,7 +115,7 @@ class Faultmachine(Agent):
         config = self.default_config.copy()
         config.update(contents)
 
-        _log.debug("[G36 Agent INFO] - Configuring Agent")
+        _log.info("[G36 Agent INFO] - Configuring Agent")
 
         try:
             ahu_instance_id = str(config["ahu_instance_id"])
@@ -146,7 +146,7 @@ class Faultmachine(Agent):
             [self.building_topic, self.ahu_instance_id, self.vfd_speed]
         )
 
-        _log.debug("[G36 Agent INFO] - Configs Set Success")
+        _log.info("[G36 Agent INFO] - Configs Set Success")
 
     def _create_subscriptions(self, topics):
         """
@@ -155,7 +155,7 @@ class Faultmachine(Agent):
         """
         self.vip.pubsub.unsubscribe("pubsub", None, None)
 
-        _log.debug(f"[G36 Agent INFO] -  _create_subscriptions {topics}")
+        _log.info(f"[G36 Agent INFO] -  _create_subscriptions {topics}")
         self.vip.pubsub.subscribe(
             peer="pubsub", prefix=topics, callback=self._handle_publish
         )
@@ -176,56 +176,58 @@ class Faultmachine(Agent):
         # _log.info(f"[G36 Agent INFO] - INCOMING AHU Data: {message[0]}")
 
         topic = topic.strip("/all")
-        _log.debug(f"*** [G36 Agent INFO] *** topic_formatted {topic}")
-        _log.debug(f"*** [G36 Agent INFO] *** message[0] is {message[0]}")
+        _log.info(f"*** [G36 Agent INFO] *** topic_formatted {topic}")
+        _log.info(f"*** [G36 Agent INFO] *** message[0] is {message[0]}")
 
+        # append value for the duct pressure setpoint
         duct_static_setpoint_ = message[0].get(self.duct_static_setpoint)
         _log.info(
             f"[G36 Agent INFO] - Duct Static Pressure Setpoint is: {duct_static_setpoint_}"
         )
         self.duct_static_setpoint_data.append(duct_static_setpoint_)
 
+        # append value for the duct pressure
         duct_static_ = message[0].get(self.duct_static)
         _log.info(f"[G36 Agent INFO] - Duct Static Pressure is: {duct_static_}")
-        self.vfd_speed_data.append(duct_static_)
+        self.duct_static_data.append(duct_static_)
 
+        # append value for the vfd speed
         vfd_speed_ = message[0].get(self.vfd_speed)
         _log.info(f"[G36 Agent INFO] - AHU Fan VFD Speed is: {vfd_speed_}")
         self.vfd_speed_data.append(vfd_speed_)
 
-    # if enough data exists run faults and then clear lists at the end
-    # G36 states 1 minute data on 5 minute rolling averages
-    @Core.periodic(10)
+        self.fault_checker()
+        
+        
     def fault_checker(self):
-        _log.debug(f"[G36 Agent INFO] - fault_checker GO!: \
+        _log.info(f"[G36 Agent INFO] - fault_checker GO!: \
             {len(self.duct_static_setpoint_data)}")
 
-        if len(self.duct_static_setpoint_data) == 0:
-            _log.debug(
+        if len(self.duct_static_setpoint_data) < 5:
+            _log.info(
                 f"[G36 Agent INFO] - Not enough accumilated data to run fault checker")
             return
 
-        elif len(self.duct_static_setpoint_data) >= 5:
-            _log.debug(f"[G36 Agent INFO] - Running Fault Machine!!!")
+        else:
 
-            df = pd.DataFrame(
-                list(
-                    zip(
-                        self.duct_static_data,
-                        self.duct_static_setpoint_data,
-                        self.vfd_speed_data,
-                    )
-                ),
-                columns=["duct_static", "duct_static_setpoint", "supply_vfd_speed"],
-            )
-            _log.debug(f"[G36 Agent INFO] - NOT rolling df is {df}")
+            data = {
+                "duct_static": self.duct_static_data, 
+                "duct_static_setpoint": self.duct_static_setpoint_data, 
+                "supply_vfd_speed": self.vfd_speed_data
+            }
+            
+            df = pd.DataFrame(data)
+            
+            _log.info(f"[G36 Agent INFO] - NOT rolling df is {df}")
 
-            df = df.rolling(window=5).mean()
-            _log.debug(f"[G36 Agent INFO] - rolling df is {df}")
+            df = df.rolling(window=5).mean().dropna()
+            _log.info(f"[G36 Agent INFO] - rolling df is {df}")
 
+            '''
             df_lastrow = df.iloc[-1:]
-            _log.debug(f"[G36 Agent INFO] - df last row is {df_lastrow}")
-
+            _log.info(f"[G36 Agent INFO] - df last row is {df_lastrow}")
+            '''
+            
             _fc1 = FaultConditionOne(
                 self.vfd_speed_percent_err_thres,
                 self.duct_static_inches_err_thres,
@@ -235,7 +237,9 @@ class Faultmachine(Agent):
                 "duct_static_setpoint",
             )
 
-            _log.debug(f"[G36 Agent INFO] - fault_condition_one {_fc1}")
+            df2 = _fc1.apply(df)
+            
+            _log.info(f"[G36 Agent INFO] - fault_condition_one is {df2.fc1_flag.value}")
 
             self.duct_static_setpoint_data.clear()
             self.duct_static_data.clear()
@@ -266,7 +270,7 @@ class Faultmachine(Agent):
         """
 
         subscription_prefix = f"devices/{self.building_topic}/{self.ahu_instance_id}/"
-        _log.debug(f"[G36 Agent INFO] - subscribe to: {subscription_prefix}")
+        _log.info(f"[G36 Agent INFO] - subscribe to: {subscription_prefix}")
 
         self.vip.pubsub.subscribe(
             peer="pubsub",
