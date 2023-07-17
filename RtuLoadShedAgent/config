@@ -1,15 +1,12 @@
 {
-"building_topic": "slipstream_internal/slipstream_hq",
-
-"nested_group_map" : {
-    "rtus" : {
-        "device_address": "1100",
-        "clg_compressor_topic":[
-            "Compressor 1 Command",
-            "Compressor 2 Command",
-            "Compressor 3 Command",
-            "Compressor 4 Command"
-            ]
-        }
-    }
+"rtu_topic": "devices/slipstream_internal/slipstream_hq/1100/all",
+"adr_gateway_topic": "devices/3056672/all",
+"electric_meter_topic": "devices/slipstream_internal/slipstream_hq/5231/all",
+"electric_meter_point": "REGCHG p_mdp_panel_total",
+"clg_compressors":[
+    "Compressor 1 Command",
+    "Compressor 2 Command",
+    "Compressor 3 Command",
+    "Compressor 4 Command"
+    ]
 }
